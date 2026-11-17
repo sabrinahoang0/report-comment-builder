@@ -1,0 +1,1214 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Build school report comments from your own comment bank and markbook. Everything stays in your browser.">
+<title>Report Comment Builder</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%276%27 fill=%27%2324477a%27/%3E%3Cpath d=%27M8 10h16M8 16h16M8 22h10%27 stroke=%27white%27 stroke-width=%273%27 stroke-linecap=%27round%27/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Literata:opsz,wght@7..72,400;7..72,600&display=swap" rel="stylesheet">
+<style>
+/* Layout: controls and sentence choices on the left, the assembled comment pinned on the right. */
+:root{
+  --bg:#f3f5f8; --panel:#ffffff; --ink:#1b2433; --muted:#5d6878; --line:#d9dfe7;
+  --accent:#24477a; --accent-soft:#e6edf7; --warn:#9a5b00; --warn-soft:#fdf1dc; --ok:#2f6b3f;
+  --mark:#ffe4a8; --bad:#b3261e; --bad-soft:#fbe3e1;
+  --ui:"Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --prose:"Literata", Georgia, "Times New Roman", serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#11161e; --panel:#19202b; --ink:#e6eaf0; --muted:#9aa5b5; --line:#2c3644;
+    --accent:#8fb2e6; --accent-soft:#1f2d42; --warn:#f0b75a; --warn-soft:#3a2c14; --ok:#7cc38f;
+    --mark:#5a4515; --bad:#ff8a80; --bad-soft:#4a1f1d; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#11161e; --panel:#19202b; --ink:#e6eaf0; --muted:#9aa5b5; --line:#2c3644;
+  --accent:#8fb2e6; --accent-soft:#1f2d42; --warn:#f0b75a; --warn-soft:#3a2c14; --ok:#7cc38f;
+  --mark:#5a4515; --bad:#ff8a80; --bad-soft:#4a1f1d; color-scheme: dark;
+}
+/* the viewer's own choice in the page wins over the app theme */
+:root[data-mode="light"]{
+  --bg:#f3f5f8; --panel:#ffffff; --ink:#1b2433; --muted:#5d6878; --line:#d9dfe7;
+  --accent:#24477a; --accent-soft:#e6edf7; --warn:#9a5b00; --warn-soft:#fdf1dc; --ok:#2f6b3f;
+  --mark:#ffe4a8; --bad:#b3261e; --bad-soft:#fbe3e1; color-scheme: light;
+}
+:root[data-mode="dark"]{
+  --bg:#11161e; --panel:#19202b; --ink:#e6eaf0; --muted:#9aa5b5; --line:#2c3644;
+  --accent:#8fb2e6; --accent-soft:#1f2d42; --warn:#f0b75a; --warn-soft:#3a2c14; --ok:#7cc38f;
+  --mark:#5a4515; --bad:#ff8a80; --bad-soft:#4a1f1d; color-scheme: dark;
+}
+.headrow{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+.modeseg{min-width:300px}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.5 var(--ui)}
+header{padding:20px 20px 8px;max-width:1240px;margin:0 auto}
+h1{font:600 1.6rem/1.2 var(--prose);margin:0 0 4px;text-wrap:balance}
+.sub{color:var(--muted);margin:0;font-size:.95rem}
+main{max-width:1240px;margin:0 auto;padding:12px 20px 40px;display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:20px;align-items:start}
+@media (max-width:900px){main{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+.setup{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.f{display:flex;flex-direction:column;gap:4px;font-size:.85rem;color:var(--muted);font-weight:700}
+select,input[type=text]{font:inherit;font-size:1rem;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:8px 10px;width:100%}
+.seg{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.seg button{flex:1;font:inherit;font-size:1rem;padding:8px 6px;border:0;background:var(--panel);color:var(--ink);cursor:pointer}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed=true]{background:var(--accent);color:var(--panel);font-weight:700}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.btn{font:inherit;font-size:.95rem;font-weight:700;padding:8px 14px;border-radius:7px;border:1px solid var(--accent);background:var(--panel);color:var(--accent);cursor:pointer}
+.btn.primary{background:var(--accent);color:var(--panel)}
+.btn:hover{filter:brightness(1.05)}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.part{margin-top:18px}
+.part h2{font:700 .8rem/1 var(--ui);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 8px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.part h2 .num{color:var(--accent);margin-right:6px}
+.showall{font:inherit;font-size:.8rem;text-transform:none;letter-spacing:0;color:var(--accent);background:none;border:0;cursor:pointer;padding:2px 4px}
+.opts{display:flex;flex-direction:column;gap:6px}
+.opt{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start;padding:10px 12px;border:1px solid var(--line);border-radius:8px;cursor:pointer;background:var(--panel)}
+.opt:hover{border-color:var(--accent)}
+.opt input{margin-top:4px;accent-color:var(--accent)}
+.opt.on{border-color:var(--accent);background:var(--accent-soft)}
+.opt .lab{display:block;font-size:.78rem;font-weight:700;color:var(--muted);margin-bottom:2px}
+.opt .txt{font-family:var(--prose);font-size:.95rem;line-height:1.45}
+.addon{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start;padding:8px 12px;border:1px dashed var(--line);border-radius:8px}
+.addon input[type=text]{margin-top:6px;font-size:.9rem;padding:6px 8px}
+.empty{color:var(--muted);font-size:.9rem;padding:8px 0}
+aside{position:sticky;top:12px;display:flex;flex-direction:column;gap:14px}
+@media (max-width:900px){aside{position:static}}
+.out h2{font:600 1.15rem/1.2 var(--prose);margin:0 0 10px}
+.comment{font:400 1.02rem/1.65 var(--prose);white-space:pre-wrap;min-height:6em;padding:12px;border-radius:8px;background:var(--bg);border:1px solid var(--line)}
+textarea.comment{width:100%;resize:vertical;min-height:12em;color:var(--ink);font:400 1.02rem/1.65 var(--prose)}
+.comment mark,table.res mark{background:var(--mark);color:inherit;border-radius:3px;padding:0 1px}
+mark.clash{background:var(--bad-soft);color:inherit;text-decoration:underline wavy var(--bad);text-underline-offset:3px}
+.chip.bad{background:var(--bad-soft);color:var(--bad)}
+.meta{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;font-size:.85rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.chip{display:inline-flex;gap:6px;align-items:center;padding:3px 9px;border-radius:999px;font-size:.82rem;font-weight:700}
+.chip.ok{background:var(--accent-soft);color:var(--ok)}
+.chip.warn{background:var(--warn-soft);color:var(--warn)}
+.notes{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.note{font-size:.88rem;padding:8px 10px;border-radius:7px;background:var(--warn-soft);color:var(--warn)}
+.note.info{background:var(--accent-soft);color:var(--accent)}
+.list h2{font:600 1.05rem/1.2 var(--prose);margin:0 0 8px;display:flex;justify-content:space-between;align-items:center}
+.list ol{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px;max-height:340px;overflow:auto}
+.list li{font-size:.9rem}
+.list li b{display:block}
+.list li span{color:var(--muted);font-family:var(--prose)}
+.list .row{display:flex;gap:6px;margin-top:4px}
+.linkbtn{font:inherit;font-size:.8rem;color:var(--accent);background:none;border:0;cursor:pointer;padding:0}
+.toast{font-size:.85rem;color:var(--ok);min-height:1.2em;margin-top:6px}
+textarea.hidden{position:absolute;left:-9999px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+.tabs{max-width:1240px;margin:0 auto;padding:4px 20px 0;display:flex;gap:6px}
+.tab{font:inherit;font-weight:700;font-size:.95rem;padding:9px 16px;border:1px solid var(--line);border-bottom:0;border-radius:8px 8px 0 0;background:var(--bg);color:var(--muted);cursor:pointer}
+.tab[aria-selected=true]{background:var(--panel);color:var(--accent)}
+[hidden]{display:none!important}
+.outof select{flex:1;min-width:0}
+.mb{max-width:1240px;margin:0 auto;padding:12px 20px 40px;display:flex;flex-direction:column;gap:16px}
+.mb h2{font:600 1.15rem/1.2 var(--prose);margin:0 0 6px}
+.mb p.help{margin:0 0 12px;color:var(--muted);font-size:.92rem;max-width:72ch}
+.drop{border:2px dashed var(--line);border-radius:10px;padding:18px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.filebtn{position:relative;overflow:hidden}
+.filebtn input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.mapgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.outof{display:flex;gap:6px;align-items:center}
+.outof input{width:80px}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+table.res{border-collapse:collapse;width:100%;font-size:.9rem}
+table.res th,table.res td{text-align:left;vertical-align:top;padding:8px 10px;border-bottom:1px solid var(--line)}
+table.res th{background:var(--bg);font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);position:sticky;top:0}
+table.res td.c{font-family:var(--prose);min-width:420px;line-height:1.5}
+table.res td.n{font-variant-numeric:tabular-nums;color:var(--muted)}
+table.res tr.skip td{color:var(--muted);font-style:italic}
+.editing{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px;border-radius:8px;background:var(--accent-soft);color:var(--accent);font-weight:700;font-size:.9rem}
+.summary{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 10px}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+</style>
+</head>
+<body>
+<header>
+  <div class="headrow"><h1>Report Comment Builder</h1>
+    <div class="seg modeseg" role="group" aria-label="Appearance">
+      <button type="button" id="md-light" aria-pressed="false">Light</button>
+      <button type="button" id="md-dark" aria-pressed="false">Dark</button>
+      <button type="button" id="md-auto" aria-pressed="false">Match device</button>
+    </div>
+  </div>
+  <p class="sub">Upload your comment bank, then build one comment by hand or import a markbook to write a comment for every student. Your files never leave this browser.</p>
+</header>
+<nav class="tabs" role="tablist">
+  <button class="tab" role="tab" id="tab-one" aria-selected="true" aria-controls="view-one">One student</button>
+  <button class="tab" role="tab" id="tab-mb" aria-selected="false" aria-controls="view-mb">Markbook</button>
+  <button class="tab" role="tab" id="tab-banks" aria-selected="false" aria-controls="view-banks">Comment banks</button>
+</nav>
+<section class="view mb" id="view-empty" hidden>
+  <div class="panel">
+    <h2>Start by adding a comment bank</h2>
+    <p class="help">A comment bank is the set of sentences you choose from: Openings, Participation, Progress and Reflections for each grade. Upload yours as a Word document or a spreadsheet on the Comment banks tab.</p>
+    <div class="toolbar"><button class="btn primary" type="button" id="goBanks">Add a comment bank</button></div>
+  </div>
+</section>
+<main class="view" id="view-one" role="tabpanel">
+  <section>
+    <div class="editing" id="editBar" hidden><span id="editLabel"></span><button class="btn primary" type="button" id="saveBack">Save to markbook</button><button class="btn" type="button" id="cancelEdit">Cancel</button></div>
+    <div class="panel">
+      <div class="setup">
+        <label class="f" for="course">Comment bank
+          <select id="course"></select>
+        </label>
+        <label class="f" for="name">Student first name
+          <input id="name" type="text" value="Mia" autocomplete="off">
+        </label>
+        <div class="f"><span>Pronouns</span>
+          <div class="seg" role="group" aria-label="Pronouns">
+            <button type="button" id="pr-she" aria-pressed="true">She / her</button>
+            <button type="button" id="pr-he" aria-pressed="false">He / him</button>
+          </div>
+        </div>
+        <div class="f"><span>Distracted in class</span>
+          <div class="seg" role="group" aria-label="Distracted in class">
+            <button type="button" id="ds-none" aria-pressed="true">No</button>
+            <button type="button" id="ds-some" aria-pressed="false">Sometimes</button>
+            <button type="button" id="ds-often" aria-pressed="false">Often</button>
+          </div>
+        </div>
+        <label class="f" for="grade">Grade
+          <select id="grade">
+            <option value="A">A · Outstanding</option>
+            <option value="B" selected>B · High</option>
+            <option value="C">C · Sound</option>
+            <option value="D">D · Basic</option>
+            <option value="E">E · Limited</option>
+          </select>
+        </label>
+        <label class="f" for="area">Strongest area (Progress)
+          <select id="area"></select>
+        </label>
+        <label class="f" for="weak">Weakest area (Reflection)
+          <select id="weak"></select>
+        </label>
+      </div>
+      <div class="toolbar">
+        <button class="btn" type="button" id="shuffle">Shuffle sentences</button>
+        <button class="btn" type="button" id="reset">Use first match</button>
+      </div>
+    </div>
+    <div id="parts"></div>
+  </section>
+  <aside>
+    <div class="panel out">
+      <h2 id="outTitle">Comment</h2>
+      <div class="comment" id="comment" aria-live="polite"></div>
+      <textarea class="comment" id="commentEdit" aria-label="Edit the comment" hidden></textarea>
+      <div class="meta" id="meta"></div>
+      <div class="notes" id="notes"></div>
+      <div class="toolbar">
+        <button class="btn primary" type="button" id="copy">Copy comment</button>
+        <button class="btn" type="button" id="add">Add to class list</button>
+        <button class="btn" type="button" id="editBtn">Edit comment</button>
+        <button class="btn" type="button" id="undoEdit" hidden>Undo my edits</button>
+      </div>
+      <div class="toast" id="toast"></div>
+    </div>
+    <div class="panel list">
+      <h2><span>Class list <span id="count" style="color:var(--muted);font-family:var(--ui);font-size:.85rem"></span></span>
+        <span><button class="btn" type="button" id="copyAll">Copy all</button></span></h2>
+      <ol id="list"></ol>
+      <p class="empty" id="listEmpty">Comments you add appear here. Copy all pastes into a spreadsheet as name, grade and comment columns.</p>
+    </div>
+  </aside>
+</main>
+
+<section class="view mb" id="view-mb" role="tabpanel" hidden>
+  <div class="panel">
+    <h2>1. Import a markbook</h2>
+    <p class="help">Excel (.xlsx) or CSV. Each row is a student. It needs a first-name column and a grade column (A to E). Optional columns: pronoun or gender, a mark for each assessment area, distracted (sometimes or often) and late submission (yes). The comment bank chosen below decides which sentences are used.</p>
+    <div class="drop" id="drop">
+      <label class="f" for="mbCourse">Comment bank<select id="mbCourse"></select></label>
+      <label class="btn primary filebtn" for="file">Import markbook<input type="file" id="file" accept=".xlsx,.xls,.csv,text/csv"></label>
+      <span id="fileInfo" class="sub">or drop a file here</span>
+      <label class="f" for="sheet" id="sheetWrap" hidden>Sheet<select id="sheet"></select></label>
+      <button class="btn" type="button" id="tmpl">Download blank template</button>
+      <button class="btn" type="button" id="mbClear" hidden>Clear markbook</button>
+    </div>
+  </div>
+  <div class="panel" id="mapPanel" hidden>
+    <h2>2. Check the columns</h2>
+    <p class="help">These were matched from your column headings. Change any that are wrong, then generate.</p>
+    <div class="mapgrid" id="mapGrid"></div>
+    <label class="addon" for="mbFocus" style="margin-top:12px"><input type="checkbox" id="mbFocus" checked><span><span class="lab" style="display:block;font-size:.78rem;font-weight:700;color:var(--muted)">Distracted students</span><span style="font-size:.95rem">Add a focus comment to their Reflection (“…is encouraged to stay focused and…”)</span></span></label>
+    <div class="toolbar"><button class="btn primary" type="button" id="gen">Generate comments</button></div>
+  </div>
+  <div class="panel" id="resPanel" hidden>
+    <h2>3. Review and export</h2>
+    <p class="help">Each comment uses the student's grade, their highest mark for Progress and, when one mark is clearly lower, a Reflection on that area. Students with the same grade get different sentence choices. Use Edit to change one by hand.</p>
+    <div class="summary" id="summary"></div>
+    <div class="toolbar" style="margin:0 0 12px">
+      <button class="btn primary" type="button" id="dlx">Download .xlsx</button>
+      <button class="btn" type="button" id="dlc">Download .csv</button>
+      <button class="btn" type="button" id="cpcol">Copy comments column</button>
+    </div>
+    <div class="toast" id="mbToast"></div>
+    <p class="help" id="savedNote" style="margin:0 0 10px"></p>
+    <div class="tablewrap"><table class="res"><thead><tr><th>Row</th><th>Student</th><th>Grade</th><th>Strongest</th><th>Weakest</th><th>Comment</th><th></th></tr></thead><tbody id="resBody"></tbody></table></div>
+  </div>
+</section>
+
+<section class="view mb" id="view-banks" role="tabpanel" hidden>
+  <div class="panel">
+    <h2>Your comment banks</h2>
+    <p class="help">Banks are kept in this browser only. Nothing is uploaded to a server, so other people and other devices can't see them.</p>
+    <div class="drop" id="bankDrop">
+      <label class="btn primary filebtn" for="bankFile">Upload a comment bank<input type="file" id="bankFile" accept=".docx,.xlsx,.xls,.csv" multiple></label>
+      <span class="sub" id="bankInfo">Word (.docx), Excel (.xlsx) or CSV · or drop files here</span>
+      <button class="btn" type="button" id="bankTmpl">Download spreadsheet template</button>
+    </div>
+    <div class="toast" id="bankToast"></div>
+    <div class="tablewrap" style="margin-top:12px"><table class="res"><thead><tr><th>Bank</th><th>Parts and sentences</th><th></th></tr></thead><tbody id="bankBody"></tbody></table></div>
+    <p class="empty" id="bankEmpty">No comment banks yet.</p>
+  </div>
+  <div class="panel">
+    <h2>How to lay out a comment bank</h2>
+    <p class="help"><b>Word:</b> give each part a heading (for example “1. Opening”, “2. Participation”, “3. Progress”, “Optional add-ons”, “4. Reflection”), with a table under it. The last column of each table is the sentence; the columns before it are its label, such as the grade (“Outstanding (A)”, “B”, “C–D”) and, for Progress, the area (“Speaking”, “Writing”). Any other heading with a table, such as “Hiragana”, becomes an extra part of the comment, in the order it appears. Headings like “How to use” and “Sample comments” are skipped.</p>
+    <p class="help"><b>Spreadsheet:</b> one row per sentence, with the columns <b>Part</b>, <b>Label</b>, <b>Area</b> (optional, for Progress) and <b>Comment</b>. Download the template to see an example.</p>
+    <p class="help"><b>In the sentences</b>, use {first_name}, {he_she}, {his_her}, {him_her} and {himself_herself}; they are filled in for each student. Put grades A to E in the labels so the right sentences are offered. Reflection labels starting “Weak” (for example “Weak writing”) are used when that area is a student's lowest mark, and a Reflection labelled “Focus” suits distracted students. Words in [square brackets] are left for you to fill in.</p>
+  </div>
+</section>
+<textarea class="hidden" id="clip" aria-hidden="true" tabindex="-1"></textarea>
+<script src="vendor/mammoth.browser.min.js"></script>
+<script src="vendor/xlsx.full.min.js"></script>
+<script>
+let BANKS = (()=>{ try { return JSON.parse(localStorage.getItem("rcb-banks")) || []; } catch(e){ return []; } })();
+const PART_NAMES = {opening:"Opening", participation:"Participation", progress:"Progress", script:"Script", reflection:"Reflection"};
+const STOP = new Set("a an the and of in to is has his her him he she himself herself which may help with for this as on at be by or all are was its it that their when from can about most some any more very also".split(" "));
+const $ = id => document.getElementById(id);
+const state = {bank:null, pron:"she", distract:"", focus:true, manual:null, typing:false, sel:{}, showAll:{}, addons:{}, addonText:{}, list:[], current:"", editing:null};
+const store = {
+  get(k){ try{ return JSON.parse(localStorage.getItem("rcb-"+k)); }catch(e){ return null; } },
+  set(k,v){ try{ localStorage.setItem("rcb-"+k, JSON.stringify(v)); return true; }catch(e){ return false; } },
+  del(k){ try{ localStorage.removeItem("rcb-"+k); }catch(e){} }
+};
+
+/* ---------- bank helpers ---------- */
+function gradesOf(label){
+  const l = label.toLowerCase(), g = new Set();
+  const m = label.match(/\(([A-E])\)/); if (m) g.add(m[1]);
+  const r = label.match(/^([A-E])(?:\s*[–-]\s*([A-E]))?(?:\s|$|·)/);
+  if (r){ const a=r[1].charCodeAt(0), b=(r[2]||r[1]).charCodeAt(0); for(let c=a;c<=b;c++) g.add(String.fromCharCode(c)); }
+  if (!g.size){
+    if (l.startsWith("highly engaged")) g.add("A");
+    else if (l.startsWith("engaged")) g.add("B");
+    else if (l.startsWith("steady")) g.add("C");
+    else if (l.startsWith("variable")) g.add("D");
+    else if (l.startsWith("needs support")) g.add("E");
+  }
+  return g;
+}
+function areaOf(label){ const p = label.split(" · "); return p.length>1 ? p[1] : ""; }
+function weakOf(label){ const m = label.match(/^Weak (.+)$/i); return m ? m[1].toLowerCase() : ""; }
+function bankAreas(bank){ return [...new Set((bank.parts.progress||[]).map(o=>areaOf(o.label)).filter(a=>a && a!=="General"))]; }
+function bankWeaks(bank){ return [...new Set((bank.parts.reflection||[]).map(o=>weakOf(o.label)).filter(Boolean))]; }
+function esc(s){ return String(s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+function candidatesFor(bank, k, f){
+  const opts = bank.parts[k] || [];
+  return opts.map((o,i)=>({...o,i})).filter(o=>{
+    const g = gradesOf(o.label);
+    if (k==="progress"){
+      if (!g.has(f.grade)) return false;
+      const a = areaOf(o.label);
+      return !f.area || !a || a===f.area || a==="General";
+    }
+    if (k==="reflection"){
+      const w = weakOf(o.label);
+      if (f.weak) return w===f.weak || (!w && g.has(f.grade));
+      return g.has(f.grade) || (!g.size && !w);
+    }
+    return g.has(f.grade) || !g.size;
+  });
+}
+
+const DISTRACT_RE = /,\s*however,\s*\{he_she\}\s*(?:can sometimes be distracted|is often easily distracted)\./;
+const DISTRACT = {some:", however, {he_she} can sometimes be distracted.", often:", however, {he_she} is often easily distracted."};
+function applyDistract(t, d){ if (!d) return t; return t.replace(DISTRACT_RE, ".").replace(/\.$/, DISTRACT[d]); }
+const CONFLICT_RE = /\b(engaged|committed|diligent|conscientious|dedicated|studious|focused)\b/i;
+function conflictWord(t){ const m = t.match(CONFLICT_RE); return m ? m[1].toLowerCase() : ""; }
+function addFocus(t){
+  if (/focus/i.test(t)) return t;
+  return t.replace(/is encouraged to (.*)/, (m, rest)=>{
+    const first = rest.split(",")[0];
+    return "is encouraged to stay focused" + (/ and /.test(first) ? ", " : " and ") + rest;
+  });
+}
+function pronMap(p){ return p==="he" ? {he_she:"he",his_her:"his",him_her:"him",himself_herself:"himself"} : {he_she:"she",his_her:"her",him_her:"her",himself_herself:"herself"}; }
+function fillWith(t, name, pron){ const p = pronMap(pron); return t.replace(/\{first_name\}/g, name || "Student").replace(/\{(he_she|his_her|him_her|himself_herself)\}/g, (m,k)=>p[k]); }
+function cap(s){ return s.replace(/(^|[.!?]\s+)([a-z])/g, (m,a,b)=>a+b.toUpperCase()); }
+function fillHoles(t, vals){ let j=0; return t.replace(/\[([^\]]+)\]/g,(m,h)=>{ const v=((vals||[])[j++]||"").trim(); return v || `[${h}]`; }); }
+
+/* ctx: {name, pron, distract, addons:{i:true}, addonText:{i:[...]}} */
+function assembleFor(bank, sel, ctx){
+  const parts = [], notes = [];
+  const adds = bank.parts.addons || [];
+  const naIdx = adds.findIndex(o=>/^N\/A/i.test(o.label));
+  if (naIdx>-1 && ctx.addons[naIdx]) return {text: cap(fillWith(fillHoles(adds[naIdx].text, ctx.addonText[naIdx]), ctx.name, ctx.pron)), notes:[{t:"N/A wording replaces the whole comment.",info:true}]};
+  let opening = "";
+  for (const k of bank.order){
+    if (sel[k]===undefined) continue;
+    let t = bank.parts[k][sel[k]].text;
+    if (k==="opening") opening = t;
+    if (k==="participation") t = applyDistract(t, ctx.distract);
+    if (k==="reflection" && ctx.distract && ctx.focus) t = addFocus(t);
+    if (k==="progress" && /demonstrated/.test(opening) && /has demonstrated/.test(t)){
+      t = t.replace("has demonstrated","has shown");
+      notes.push({t:"Changed “has demonstrated” to “has shown” in Progress, because the Opening already says “demonstrated”.",info:true});
+    }
+    parts.push(t);
+    if (k==="progress") adds.forEach((o,i)=>{ if (i!==naIdx && ctx.addons[i]) parts.push(fillHoles(o.text, ctx.addonText[i])); });
+  }
+  return {text: cap(fillWith(parts.join(" "), ctx.name, ctx.pron)), notes};
+}
+// words that pull against each other within one comment
+const CLASH_GROUPS = [
+  {name:"effort", pos:["engaged","committed","diligent","conscientious","dedicated","studious","diligence"], neg:["distracted","inconsistent"]},
+  {name:"level", pos:["outstanding","excellent","exceptionally","extensive","exemplary"], neg:["limited","basic","elementary","difficulty","challenging"]}
+];
+function clashesIn(text){
+  const words = new Set((text.toLowerCase().match(/[a-z]+/g)||[]));
+  const hit = new Set(), pairs = [];
+  for (const g of CLASH_GROUPS){
+    const p = g.pos.filter(w=>words.has(w)), n = g.neg.filter(w=>words.has(w));
+    if (p.length && n.length){ p.concat(n).forEach(w=>hit.add(w)); pairs.push(`${p.join("/")} vs ${n.join("/")}`); }
+  }
+  return {words:hit, pairs};
+}
+function highlight(text, name){
+  const dup = new Set(repeatsIn(text, name)), cl = clashesIn(text);
+  const html = esc(text).replace(/[A-Za-z’'-]+/g, w=>{
+    const base = w.toLowerCase().replace(/[’']s$/,"");
+    if (cl.words.has(base)) return `<mark class="clash" title="May contradict another part of the comment">${w}</mark>`;
+    if (dup.has(base)) return `<mark title="Repeated word">${w}</mark>`;
+    return w;
+  });
+  return {html, dup:[...dup], clash:cl.pairs};
+}
+function repeatsIn(text, name){
+  name = (name||"Student").toLowerCase();
+  const words = text.toLowerCase().match(/[a-z’'-]+/g) || [], seen = {}, dup = new Set();
+  for (const w0 of words){ const w = w0.replace(/[’']s$/,""); if (STOP.has(w) || w===name || w.length<3) continue; seen[w]=(seen[w]||0)+1; if (seen[w]>1) dup.add(w); }
+  return [...dup];
+}
+
+/* ---------- one-student view ---------- */
+function filters(){ return {grade:$("grade").value, area:$("area").value, weak:$("weak").value}; }
+function ctxNow(){ return {name:$("name").value.trim(), pron:state.pron, distract:state.distract, focus:state.focus, addons:state.addons, addonText:state.addonText}; }
+function partTitle(k){ return (state.bank.titles && state.bank.titles[k]) || PART_NAMES[k] || k; }
+function pickDefaults(force){
+  if (!state.bank) return;
+  for (const k of state.bank.order){
+    const c = candidatesFor(state.bank, k, filters());
+    if (!c.length) { if (force) delete state.sel[k]; continue; }
+    if (force || !c.some(o=>o.i===state.sel[k])) state.sel[k] = c[0].i;
+  }
+}
+function buildCourseSelects(){
+  const html = BANKS.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join("");
+  $("course").innerHTML = html; $("mbCourse").innerHTML = html;
+  if (!BANKS.length) return;
+  const cur = state.bank && BANKS.some(b=>b.id===state.bank.id) ? state.bank.id : null;
+  const last = store.get("course"); const id = cur || ((last && BANKS.some(b=>b.id===last)) ? last : BANKS[0].id);
+  $("course").value = id; $("mbCourse").value = id;
+}
+function loadBank(keepSel){
+  state.bank = BANKS.find(b=>b.id===$("course").value) || null;
+  if (!state.bank) return;
+  $("mbCourse").value = state.bank.id;
+  if (!keepSel){ state.sel = {}; state.addons = {}; state.addonText = {}; }
+  state.showAll = {};
+  const areas = bankAreas(state.bank);
+  $("area").innerHTML = areas.length ? `<option value="">Any area</option>` + areas.map(a=>`<option>${esc(a)}</option>`).join("") : `<option value="">Not split by area</option>`;
+  $("area").disabled = !areas.length;
+  const weaks = bankWeaks(state.bank);
+  $("weak").innerHTML = `<option value="">None (use the grade's Reflection)</option>` + weaks.map(w=>`<option value="${esc(w)}">${esc(w[0].toUpperCase()+w.slice(1))}</option>`).join("");
+  $("weak").disabled = !weaks.length;
+  if (!keepSel) pickDefaults(true);
+  store.set("course", state.bank.id);
+}
+
+function renderParts(){
+  const host = $("parts"); host.innerHTML = "";
+  let n = 0;
+  const seq = [...state.bank.order];
+  seq.splice(seq.indexOf("progress")+1, 0, "addons");
+  const ctx = ctxNow();
+  for (const k of seq){
+    const sec = document.createElement("div"); sec.className = "part panel";
+    if (k==="addons"){
+      const list = state.bank.parts.addons || [];
+      if (!list.length) continue;
+      sec.innerHTML = `<h2><span>Optional add-ons <span style="text-transform:none;letter-spacing:0;font-weight:400">· placed after Progress</span></span></h2><div class="opts"></div>`;
+      const box = sec.querySelector(".opts");
+      list.forEach((o,i)=>{
+        const id = `ad-${i}`;
+        const holes = [...o.text.matchAll(/\[([^\]]+)\]/g)].map(m=>m[1]);
+        const row = document.createElement("label"); row.className="addon"; row.htmlFor=id;
+        row.innerHTML = `<input type="checkbox" id="${id}" ${state.addons[i]?"checked":""}><span><span class="lab" style="display:block;font-size:.78rem;font-weight:700;color:var(--muted)">${esc(o.label)}</span><span class="txt" style="font-family:var(--prose);font-size:.95rem">${esc(o.text)}</span>${holes.map((h,j)=>`<input type="text" id="${id}-h${j}" placeholder="${esc(h)}" value="${esc((state.addonText[i]||[])[j]||"")}" aria-label="${esc(h)}">`).join("")}</span>`;
+        box.appendChild(row);
+        row.querySelector(`#${id}`).addEventListener("change", e=>{ state.addons[i]=e.target.checked; render(); });
+        holes.forEach((h,j)=> row.querySelector(`#${id}-h${j}`).addEventListener("input", e=>{ (state.addonText[i] ||= [])[j]=e.target.value; if(!state.addons[i]){ state.addons[i]=true; row.querySelector(`#${id}`).checked=true; } renderOutput(); }));
+      });
+      host.appendChild(sec); continue;
+    }
+    n++;
+    const all = state.showAll[k];
+    const opts = all ? state.bank.parts[k].map((o,i)=>({...o,i})) : candidatesFor(state.bank, k, filters());
+    sec.innerHTML = `<h2><span><span class="num">${n}</span>${esc(partTitle(k))}</span><button type="button" class="showall">${all?"Show matches only":"Show all "+state.bank.parts[k].length}</button></h2><div class="opts" role="radiogroup" aria-label="${esc(partTitle(k))}"></div>`;
+    sec.querySelector(".showall").addEventListener("click", ()=>{ state.showAll[k]=!all; renderParts(); });
+    const box = sec.querySelector(".opts");
+    if (k==="reflection" && ctx.distract){
+      const fl = document.createElement("label"); fl.className = "addon"; fl.htmlFor = "focusOn";
+      fl.innerHTML = `<input type="checkbox" id="focusOn" ${state.focus?"checked":""}><span><span class="lab" style="display:block;font-size:.78rem;font-weight:700;color:var(--muted)">Distracted in class</span><span style="font-size:.95rem">Add a focus comment to the Reflection (“…is encouraged to stay focused and…”)</span></span>`;
+      fl.querySelector("input").addEventListener("change", e=>{ state.focus = e.target.checked; render(); });
+      box.before(fl); fl.style.marginBottom = "8px";
+    }
+    if (!opts.length) box.innerHTML = `<p class="empty">No sentence in this bank matches the grade. Use "Show all" to pick one.</p>`;
+    opts.forEach(o=>{
+      const id = `${k}-${o.i}`;
+      const row = document.createElement("label"); row.className = "opt"+(state.sel[k]===o.i?" on":""); row.htmlFor = id;
+      const shown = k==="participation" ? applyDistract(o.text, ctx.distract) : (k==="reflection" && ctx.distract && ctx.focus) ? addFocus(o.text) : o.text;
+      row.innerHTML = `<input type="radio" name="${k}" id="${id}" ${state.sel[k]===o.i?"checked":""}><span><span class="lab">${esc(o.label)}</span><span class="txt">${esc(cap(fillWith(shown, ctx.name, ctx.pron)))}</span></span>`;
+      row.querySelector("input").addEventListener("change", ()=>{ state.sel[k]=o.i; renderParts(); renderOutput(); });
+      box.appendChild(row);
+    });
+    host.appendChild(sec);
+  }
+}
+
+function renderOutput(){
+  const ctx = ctxNow();
+  const built = assembleFor(state.bank, state.sel, ctx);
+  const text = state.manual !== null ? state.manual : built.text;
+  const notes = state.manual !== null ? [{t:"You've edited this comment by hand. Changing any option above replaces your edits.",info:true}] : built.notes;
+  const hl = highlight(text, ctx.name), dup = hl.dup;
+  $("comment").innerHTML = hl.html;
+  $("outTitle").textContent = `${ctx.name||"Student"} · ${state.bank.name} · ${$("grade").value}`;
+  const words = (text.match(/\S+/g)||[]).length, sentences = (text.match(/[.!?](\s|$)/g)||[]).length;
+  $("meta").innerHTML = `<span>${sentences} sentences</span><span>${words} words</span>` +
+    (dup.length ? `<span class="chip warn">Repeated: ${dup.map(esc).join(", ")}</span>` : `<span class="chip ok">No repeated words</span>`) +
+    (/\[[^\]]+\]/.test(text) ? `<span class="chip warn">Fill in the [brackets]</span>` : "") +
+    hl.clash.map(c=>`<span class="chip bad">Contradicts: ${esc(c)}</span>`).join("");
+  const all = [...notes];
+  const op = state.sel.opening!==undefined ? (state.bank.parts.opening[state.sel.opening]||{}).text||"" : "";
+  const cw = conflictWord(op);
+  if (state.distract && cw && state.manual === null) all.push({t:`The Opening calls ${ctx.name||"the student"} “${cw}”, which may contradict being distracted. Choose another Opening or use Edit comment.`});
+  if ($("grade").value==="E") all.push({t:"An E may only be awarded if a parent or carer was contacted during the semester about progress."});
+  $("notes").innerHTML = all.map(n=>`<div class="note${n.info?" info":""}">${esc(n.t)}</div>`).join("");
+  state.current = text;
+  $("undoEdit").hidden = state.manual === null;
+}
+function stopTyping(){ state.typing = false; $("commentEdit").hidden = true; $("comment").hidden = false; $("editBtn").textContent = "Edit comment"; }
+function render(){ state.manual = null; stopTyping(); if (!state.bank) return; renderParts(); renderOutput(); }
+function preferNonConflicting(){
+  if (!state.distract) return;
+  const cur = state.bank.parts.opening[state.sel.opening];
+  if (cur && !conflictWord(cur.text)) return;
+  const alt = candidatesFor(state.bank, "opening", filters()).find(o=>!conflictWord(o.text));
+  if (alt) state.sel.opening = alt.i;
+}
+
+async function copyText(t, msg, toastId){
+  const toast = $(toastId||"toast");
+  let ok = false;
+  try { await navigator.clipboard.writeText(t); ok = true; } catch(e) {}
+  if (!ok){ const c=$("clip"); c.value=t; c.select(); try{ ok = document.execCommand("copy"); }catch(e){} }
+  toast.textContent = ok ? msg : "Copy was blocked here. Select the text and copy it by hand.";
+  setTimeout(()=>{ toast.textContent=""; }, 2500);
+}
+function renderList(){
+  $("count").textContent = state.list.length ? `(${state.list.length})` : "";
+  $("listEmpty").style.display = state.list.length ? "none" : "";
+  $("list").innerHTML = state.list.map((r,i)=>`<li><b>${esc(r.name)} · ${esc(r.course)} · ${r.grade}</b><span>${esc(r.text)}</span><div class="row"><button class="linkbtn" data-c="${i}" type="button">Copy</button><button class="linkbtn" data-d="${i}" type="button">Remove</button></div></li>`).join("");
+  $("list").querySelectorAll("[data-c]").forEach(b=>b.addEventListener("click",()=>copyText(state.list[+b.dataset.c].text,"Comment copied.")));
+  $("list").querySelectorAll("[data-d]").forEach(b=>b.addEventListener("click",()=>{ state.list.splice(+b.dataset.d,1); store.set("list",state.list); renderList(); }));
+}
+function setPron(p){ state.pron=p; $("pr-she").setAttribute("aria-pressed",p==="she"); $("pr-he").setAttribute("aria-pressed",p==="he"); }
+function setDistract(d){ state.distract=d; [["none",""],["some","some"],["often","often"]].forEach(([id,v])=>$("ds-"+id).setAttribute("aria-pressed", v===d)); }
+
+/* ---------- tabs ---------- */
+let currentTab = "one";
+function showTab(which){
+  currentTab = which;
+  const none = !BANKS.length && which!=="banks";
+  ["one","mb","banks"].forEach(x=>$("tab-"+x).setAttribute("aria-selected", x===which));
+  $("view-one").hidden = none || which!=="one";
+  $("view-mb").hidden = none || which!=="mb";
+  $("view-banks").hidden = which!=="banks";
+  $("view-empty").hidden = !none;
+  try { history.replaceState(null, "", which==="one" ? location.pathname : "#"+(which==="mb"?"markbook":"banks")); } catch(e){}
+}
+
+/* ---------- downloads ---------- */
+function updateDlButtons(){}
+function saveFile(filename, data, toast){
+  try {
+    const blob = data instanceof Blob ? data : new Blob([data], {type: /\.csv$/i.test(filename) ? "text/csv;charset=utf-8" : "application/octet-stream"});
+    const url = URL.createObjectURL(blob), a = document.createElement("a");
+    a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 4000);
+    (toast||mbToast)(`Downloaded ${filename}.`);
+  } catch(e){ (toast||mbToast)("The download didn't work in this browser. Use Copy comments column instead."); }
+}
+function mbToast(m){ $("mbToast").textContent = m; clearTimeout(mbToast.t); mbToast.t = setTimeout(()=>{ $("mbToast").textContent=""; }, 4000); }
+
+/* ---------- markbook ---------- */
+const mb = {wb:null, fileName:"", sheet:"", aoa:[], headerRow:0, header:[], map:null, results:[]};
+
+function parseCSV(text){
+  const rows=[]; let row=[], f="", q=false;
+  for (let i=0;i<text.length;i++){
+    const c=text[i];
+    if (q){ if (c==='"'){ if (text[i+1]==='"'){ f+='"'; i++; } else q=false; } else f+=c; }
+    else if (c==='"') q=true;
+    else if (c===','){ row.push(f); f=""; }
+    else if (c==='\n' || c==='\r'){ if (c==='\r' && text[i+1]==='\n') i++; row.push(f); rows.push(row); row=[]; f=""; }
+    else f+=c;
+  }
+  if (f!=="" || row.length){ row.push(f); rows.push(row); }
+  return rows;
+}
+async function importFile(file){
+  mb.fileName = file.name.replace(/\.[^.]+$/,"");
+  $("fileInfo").textContent = `Reading ${file.name}…`;
+  try {
+    if (window.XLSX){
+      const buf = await file.arrayBuffer();
+      mb.wb = XLSX.read(buf, {type:"array"});
+      const names = mb.wb.SheetNames;
+      $("sheet").innerHTML = names.map(n=>`<option>${esc(n)}</option>`).join("");
+      $("sheetWrap").hidden = names.length < 2;
+      loadSheet(names[0]);
+    } else if (/\.csv$/i.test(file.name)){
+      mb.wb = null; $("sheetWrap").hidden = true;
+      mb.aoa = parseCSV(await file.text()); afterSheet();
+    } else { $("fileInfo").textContent = "Excel files need the spreadsheet library, which didn't load. Save the markbook as CSV and import that."; return; }
+    $("fileInfo").textContent = `${file.name} · ${mb.aoa.length - mb.headerRow - 1} rows`;
+  } catch(e){ $("fileInfo").textContent = "That file couldn't be read. Check it's an .xlsx or .csv markbook."; }
+}
+function loadSheet(name){
+  mb.sheet = name;
+  mb.aoa = XLSX.utils.sheet_to_json(mb.wb.Sheets[name], {header:1, defval:"", raw:true});
+  afterSheet();
+}
+function afterSheet(){
+  mb.aoa = mb.aoa.map(r=>r.map(v=>v==null?"":v));
+  // header row: first row (of the first 10) with at least two text cells and a name-like heading
+  let h = mb.aoa.findIndex((r,i)=>i<10 && r.filter(v=>typeof v==="string" && v.trim()).length>=2 && r.some(v=>/name/i.test(v)));
+  if (h<0) h = Math.max(0, mb.aoa.findIndex(r=>r.some(v=>String(v).trim())));
+  mb.headerRow = h;
+  mb.header = (mb.aoa[h]||[]).map(v=>String(v).trim());
+  autoMap(); renderMap();
+  $("mapPanel").hidden = false; $("resPanel").hidden = true;
+  $("fileInfo").textContent = `${mb.fileName} · ${mb.aoa.length - h - 1} rows`;
+  mb.results = []; mb.course = state.bank.id;
+  saveMb();
+}
+function saveMb(){
+  if (!mb.aoa.length) return;
+  const ok = store.set("mb", {fileName:mb.fileName, sheet:mb.sheet, aoa:mb.aoa, headerRow:mb.headerRow, header:mb.header, map:mb.map, results:mb.results, course:mb.course||state.bank.id, focus:$("mbFocus").checked, savedAt:Date.now()});
+  $("mbClear").hidden = false;
+  $("savedNote").textContent = ok ? "Saved in this browser: it stays here if you reload or come back later." : "This browser won't keep a copy, so download or copy your comments before closing the page.";
+}
+function restoreMb(){
+  const s = store.get("mb"); if (!s || !s.aoa || !s.aoa.length || !BANKS.length) return;
+  Object.assign(mb, s); mb.wb = null;
+  if (BANKS.some(b=>b.id===s.course)){ $("course").value = s.course; loadBank(); }
+  $("mbFocus").checked = s.focus !== false;
+  $("sheetWrap").hidden = true;
+  renderMap(); $("mapPanel").hidden = false;
+  if (mb.results.length && mb.course===state.bank.id){ renderResults(); $("resPanel").hidden = false; }
+  const when = s.savedAt ? new Date(s.savedAt).toLocaleString("en-AU",{weekday:"short",hour:"numeric",minute:"2-digit"}) : "";
+  $("fileInfo").textContent = `${mb.fileName} · restored from ${when || "your last session"}`;
+  $("mbClear").hidden = false;
+  $("savedNote").textContent = "Saved in this browser: it stays here if you reload or come back later.";
+}
+function findCol(res, avoid){ const i = mb.header.findIndex(h=>h && res.some(r=>r.test(h)) && !(avoid && avoid.test(h))); return i; }
+const AREA_HINTS = {
+  "speaking":[/speak|oral|role ?play|conversation|interview|direction/i],
+  "writing":[/writ|journal|scrapbook|pamphlet|letter|report|timeline|essay/i],
+  "listening":[/listen/i],
+  "reading":[/read/i]
+};
+function guessOutOf(col){
+  const hm = (mb.header[col]||"").match(/(?:\/|out of|\()\s*(\d+)/i); if (hm) return +hm[1];
+  const vals = dataRows().map(r=>parseFloat(r[col])).filter(v=>!isNaN(v));
+  const max = Math.max(0,...vals);
+  for (const n of [1,5,10,15,20,25,30,40,50,100]) if (max<=n) return n;
+  return Math.ceil(max);
+}
+// an area such as "Listening and Reading" takes a separate mark for each skill
+function areaParts(a){ return /^listening and reading$/i.test(a) ? ["Listening","Reading"] : [a]; }
+function normaliseMap(m){
+  for (const a of Object.keys(m.areas||{})){
+    const r = m.areas[a];
+    if (r && !r.parts) m.areas[a] = {parts: areaParts(a).map((p,q)=>q===0 ? {label:p, col:r.col, outOf:r.outOf} : {label:p, col:-1, outOf:100})};
+  }
+  return m;
+}
+function dataRows(){ return mb.aoa.slice(mb.headerRow+1); }
+function autoMap(){
+  const bank = state.bank;
+  const m = {
+    name: findCol([/first ?name|given|preferred/i]),
+    pron: findCol([/pronoun|gender|sex|^m\/f$/i]),
+    grade: findCol([/^grade$/i]) ,
+    distract: findCol([/distract|focus/i]),
+    late: findCol([/late/i]),
+    areas:{}
+  };
+  if (m.name<0) m.name = findCol([/name|student/i],/surname|last|family/i);
+  if (m.grade<0) m.grade = findCol([/grade|overall|result/i]);
+  m.nameFormat = "auto";
+  const used = new Set([m.name,m.pron,m.grade,m.distract,m.late]);
+  for (const a of bankAreas(bank)){
+    m.areas[a] = {parts: areaParts(a).map(p=>{
+      const hints = AREA_HINTS[p.toLowerCase()] || [new RegExp(p.split(" ")[0],"i")];
+      const col = mb.header.findIndex((h,i)=>h && !used.has(i) && hints.some(r=>r.test(h)));
+      if (col>-1) used.add(col);
+      return {label:p, col, outOf: col>-1 ? guessOutOf(col) : 100};
+    })};
+  }
+  mb.map = m;
+}
+function colSelect(id, val, label, optional){
+  const opts = mb.header.map((h,i)=>`<option value="${i}" ${i===val?"selected":""}>${esc(h || `Column ${i+1}`)}</option>`).join("");
+  return `<label class="f" for="${id}">${esc(label)}<select id="${id}">${optional||true?`<option value="-1" ${val<0?"selected":""}>${optional?"Not in markbook":"Choose a column"}</option>`:""}${opts}</select></label>`;
+}
+function renderMap(){
+  const m = mb.map, g = $("mapGrid");
+  let html = colSelect("mName", m.name, "First name (required)", false) +
+    `<label class="f" for="mFmt">Name format<select id="mFmt"><option value="auto">Work it out</option><option value="first">First name only</option><option value="first-last">First Surname</option><option value="last-first">Surname, First</option></select></label>` +
+    colSelect("mGrade", m.grade, "Grade A to E (required)", false) +
+    colSelect("mPron", m.pron, "Pronoun or gender", true) +
+    colSelect("mDis", m.distract, "Distracted (sometimes / often)", true) +
+    colSelect("mLate", m.late, "Late submission (yes)", true);
+  normaliseMap(m);
+  bankAreas(state.bank).forEach((a,j)=>{
+    if (!m.areas[a]) m.areas[a] = {parts: areaParts(a).map(p=>({label:p,col:-1,outOf:100}))};
+    m.areas[a].parts.forEach((r,q)=>{
+      const note = m.areas[a].parts.length>1 ? ` <span style="font-weight:400">(part of ${esc(a)})</span>` : "";
+      html += `<div class="f"><span>${esc(r.label)} mark${note}</span><div class="outof">${colSelect(`mA${j}_${q}`, r.col, "", true).replace(/^<label[^>]*>/,"").replace(/<\/label>$/,"")}<span>out of</span><input type="text" inputmode="decimal" id="mO${j}_${q}" value="${r.outOf}" aria-label="${esc(r.label)} out of"></div></div>`;
+    });
+  });
+  if (!bankAreas(state.bank).length) html += `<p class="help" style="grid-column:1/-1">This bank's Progress sentences aren't split by area, so marks aren't needed.</p>`;
+  g.innerHTML = html;
+  $("mFmt").value = m.nameFormat;
+  const bind = (id, fn)=>$(id).addEventListener("change", e=>fn(e.target.value));
+  bind("mName", v=>m.name=+v); bind("mFmt", v=>m.nameFormat=v); bind("mGrade", v=>m.grade=+v);
+  bind("mPron", v=>m.pron=+v); bind("mDis", v=>m.distract=+v); bind("mLate", v=>m.late=+v);
+  bankAreas(state.bank).forEach((a,j)=>{
+    m.areas[a].parts.forEach((r,q)=>{
+      bind(`mA${j}_${q}`, v=>{ r.col=+v; if (+v>-1){ r.outOf = guessOutOf(+v); $(`mO${j}_${q}`).value = r.outOf; } });
+      $(`mO${j}_${q}`).addEventListener("input", e=>{ const n=parseFloat(e.target.value); if (n>0) r.outOf=n; });
+    });
+  });
+}
+
+function firstNameOf(raw, fmt){
+  const s = String(raw).trim(); if (!s) return "";
+  if (fmt==="first") return s;
+  if (fmt==="last-first" || (fmt==="auto" && s.includes(","))) return (s.split(",")[1]||s).trim().split(/\s+/)[0];
+  if (fmt==="first-last") return s.split(/\s+/)[0];
+  return s.split(/\s+/)[0];
+}
+function gradeOf(v){
+  const s = String(v).trim();
+  const w = s.toLowerCase();
+  const words = {outstanding:"A",high:"B",sound:"C",basic:"D",limited:"E"};
+  for (const k in words) if (w.startsWith(k)) return words[k];
+  const m = s.toUpperCase().match(/^([A-E])(?![A-Z])/);
+  return m ? m[1] : "";
+}
+function pronOf(v){
+  const s = String(v).trim().toLowerCase();
+  if (/^(m|male|boy|he|him|his)\b/.test(s)) return "he";
+  if (/^(f|female|girl|she|her)\b/.test(s)) return "she";
+  return "";
+}
+function distractOf(v){
+  const s = String(v).trim().toLowerCase(); if (!s) return "";
+  if (/often|always|frequent|very|^2$/.test(s)) return "often";
+  if (/^(no|n|false|0|never|-)$/.test(s)) return "";
+  return "some";
+}
+function yes(v){ return /^(y|yes|true|1|x|late|✓|✔)$/i.test(String(v).trim()); }
+
+function generate(){
+  const m = mb.map, bank = state.bank;
+  if (m.name<0 || m.grade<0){ mbToast("Choose the first-name and grade columns first."); return; }
+  const counters = {};
+  const rotate = (key, list)=>{ if (!list.length) return undefined; const n = counters[key]||0; counters[key]=n+1; return list[n % list.length].i; };
+  const adds = bank.parts.addons || [];
+  const lateIdx = adds.findIndex(o=>/^late/i.test(o.label));
+  const refl = bank.parts.reflection || [];
+  const focusIdx = refl.findIndex(o=>o.label==="Focus");
+  const weaks = bankWeaks(bank);
+  mb.results = [];
+  dataRows().forEach((r, ri)=>{
+    const rowIndex = mb.headerRow + 1 + ri;
+    const raw = r[m.name];
+    if (!String(raw||"").trim()) return;
+    const name = firstNameOf(raw, m.nameFormat);
+    const grade = gradeOf(r[m.grade]);
+    if (!grade){ mb.results.push({rowIndex, raw, name, grade:String(r[m.grade]||"").trim()||"—", skipped:true, text:"", why:"No A to E grade"}); return; }
+    const pron = (m.pron>-1 && pronOf(r[m.pron])) || state.pron;
+    const distract = m.distract>-1 ? distractOf(r[m.distract]) : "";
+    const late = m.late>-1 && yes(r[m.late]);
+    // marks
+    const pcts = [];
+    for (const a of bankAreas(bank)){
+      const ar = m.areas[a]; if (!ar || !ar.parts) continue;
+      const ps = ar.parts.filter(x=>x.col>-1 && x.outOf>0).map(x=>parseFloat(String(r[x.col]).replace("%",""))/x.outOf*100).filter(v=>!isNaN(v));
+      if (ps.length) pcts.push({a, p: ps.reduce((s,v)=>s+v,0)/ps.length});
+    }
+    let strongest = "", weakest = "";
+    if (pcts.length){
+      const sorted = [...pcts].sort((x,y)=>y.p-x.p);
+      strongest = sorted[0].a;
+      if (pcts.length>=2){
+        const low = sorted[sorted.length-1], others = sorted.slice(0,-1);
+        const avg = others.reduce((s,x)=>s+x.p,0)/others.length;
+        if (avg - low.p >= 10) weakest = low.a;
+      }
+    }
+    const weakKey = weakest ? (weaks.find(w=>w===weakest.toLowerCase()) || weaks.find(w=>weakest.toLowerCase().includes(w) || w.includes(weakest.toLowerCase())) || "") : "";
+    const f = {grade, area: strongest, weak: ""};
+    const sel = {};
+    for (const k of bank.order){
+      if (k==="reflection"){
+        if (weakKey){ sel[k] = refl.findIndex(o=>weakOf(o.label)===weakKey); }
+        else sel[k] = rotate(k+grade, candidatesFor(bank, k, {grade, area:"", weak:""}).filter(o=>!weakOf(o.label) && o.label!=="Focus" && o.label!=="Organisation"));
+        continue;
+      }
+      let c = candidatesFor(bank, k, f);
+      if (k==="opening" && distract){ const nc = c.filter(o=>!conflictWord(o.text)); if (nc.length) c = nc; }
+      if (!c.length && k==="progress") c = candidatesFor(bank, k, {grade, area:"", weak:""});
+      sel[k] = rotate(k+grade+(k==="progress"?strongest:""), c);
+      if (sel[k]===undefined) delete sel[k];
+    }
+    const addons = {}; if (late && lateIdx>-1) addons[lateIdx] = true;
+    const ctx = {name, pron, distract, focus: $("mbFocus").checked, addons, addonText:{}};
+    // avoid repeated words: try the other Openings (and the grade's other Reflections) for this grade
+    const score = s => repeatsIn(assembleFor(bank, s, ctx).text, name).length;
+    if (score(sel)){
+      let ops = candidatesFor(bank,"opening",{grade,area:"",weak:""});
+      if (distract){ const nc = ops.filter(o=>!conflictWord(o.text)); if (nc.length) ops = nc; }
+      const tries = [["opening", ops]];
+      if (!weakKey) tries.push(["reflection", candidatesFor(bank,"reflection",{grade,area:"",weak:""}).filter(o=>!weakOf(o.label) && o.label!=="Focus" && o.label!=="Organisation")]);
+      for (const [k, list] of tries){
+        let best = sel[k], bestScore = score(sel);
+        for (const o of list){ const s2 = {...sel, [k]:o.i}; const sc = score(s2); if (sc < bestScore){ best = o.i; bestScore = sc; } }
+        sel[k] = best;
+        if (!bestScore) break;
+      }
+    }
+    const {text} = assembleFor(bank, sel, ctx);
+    mb.results.push({rowIndex, raw, name, grade, pron, distract, late, strongest, weakest, weakKey, sel, ctx, text, edited:false});
+  });
+  mb.course = bank.id;
+  renderResults();
+  $("resPanel").hidden = false;
+  saveMb();
+}
+
+function renderResults(){
+  const done = mb.results.filter(r=>!r.skipped), skipped = mb.results.filter(r=>r.skipped);
+  const flagged = done.filter(r=>repeatsIn(r.text, r.name).length || /\[[^\]]+\]/.test(r.text));
+  const clashing = done.filter(r=>clashesIn(r.text).pairs.length);
+  const byGrade = "ABCDE".split("").map(g=>[g, done.filter(r=>r.grade===g).length]).filter(x=>x[1]);
+  $("summary").innerHTML = `<span class="chip ok">${done.length} comments written</span>` +
+    byGrade.map(([g,n])=>`<span class="chip ok" style="color:var(--muted)">${g}: ${n}</span>`).join("") +
+    (skipped.length ? `<span class="chip warn">${skipped.length} skipped (no grade)</span>` : "") +
+    (flagged.length ? `<span class="chip warn">${flagged.length} with repeated words to check</span>` : "") +
+    (clashing.length ? `<span class="chip bad">${clashing.length} with contradictions to check</span>` : "") +
+    (done.some(r=>r.grade==="E") ? `<span class="chip warn">E grades: check a parent or carer was contacted</span>` : "");
+  $("resBody").innerHTML = mb.results.map((r,i)=>{
+    if (r.skipped) return `<tr class="skip"><td class="n">${r.rowIndex+1}</td><td>${esc(r.raw)}</td><td>${esc(r.grade)}</td><td></td><td></td><td>${esc(r.why)}: no comment written.</td><td></td></tr>`;
+    const hl = highlight(r.text, r.name), html = hl.html;
+    const clash = hl.clash.length;
+    return `<tr><td class="n">${r.rowIndex+1}</td><td><b>${esc(r.raw)}</b>${r.edited?'<br><span class="chip ok">Edited</span>':""}${clash?'<br><span class="chip bad">Contradiction</span>':""}</td><td>${r.grade}</td><td>${esc(r.strongest||"—")}</td><td>${esc(r.weakest||"—")}</td><td class="c">${html}</td><td><button class="btn" type="button" data-e="${i}">Edit</button></td></tr>`;
+  }).join("");
+  $("resBody").querySelectorAll("[data-e]").forEach(b=>b.addEventListener("click",()=>editResult(+b.dataset.e)));
+}
+
+function editResult(i){
+  const r = mb.results[i];
+  state.editing = i;
+  $("course").value = state.bank.id;
+  $("name").value = r.name;
+  setPron(r.pron); setDistract(r.distract); state.focus = r.ctx.focus !== false;
+  $("grade").value = r.grade;
+  loadBank(true);
+  $("area").value = r.strongest || "";
+  $("weak").value = r.weakKey || "";
+  state.sel = {...r.sel}; state.addons = {...r.ctx.addons}; state.addonText = JSON.parse(JSON.stringify(r.ctx.addonText||{}));
+  $("editLabel").textContent = `Editing row ${r.rowIndex+1}: ${r.raw}`;
+  $("editBar").hidden = false;
+  showTab("one"); render(); window.scrollTo({top:0});
+}
+function endEdit(save){
+  const i = state.editing; if (i===null) return;
+  if (save){
+    const r = mb.results[i];
+    r.text = state.current; r.edited = true; r.sel = {...state.sel};
+    r.ctx = {...ctxNow(), addons:{...state.addons}, addonText: JSON.parse(JSON.stringify(state.addonText))};
+    r.grade = $("grade").value; r.pron = state.pron; r.distract = state.distract; r.ctx.focus = state.focus;
+    renderResults(); saveMb();
+  }
+  state.editing = null; $("editBar").hidden = true; showTab("mb");
+}
+
+function exportAoa(){
+  const aoa = mb.aoa.map(r=>[...r]);
+  const width = Math.max(...aoa.map(r=>r.length), mb.header.length);
+  let col = mb.header.findIndex(h=>/^(report )?comments?$/i.test(h));
+  if (col<0){ col = width; (aoa[mb.headerRow] ||= [])[col] = "Report comment"; }
+  const byRow = {}; mb.results.forEach(r=>{ if (!r.skipped) byRow[r.rowIndex] = r.text; });
+  for (let i=mb.headerRow+1;i<aoa.length;i++){ while (aoa[i].length<col) aoa[i].push(""); aoa[i][col] = byRow[i] || aoa[i][col] || ""; }
+  return aoa;
+}
+function csvOf(aoa){ return aoa.map(r=>r.map(v=>{ const s=String(v??""); return /[",\n\r]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s; }).join(",")).join("\r\n"); }
+
+/* ---------- wiring ---------- */
+buildCourseSelects(); loadBank();
+state.list = store.get("list") || [];
+$("course").addEventListener("change", ()=>{ loadBank(); render(); if (mb.aoa.length){ autoMap(); renderMap(); $("resPanel").hidden = !(mb.results.length && mb.course===state.bank.id); } });
+$("mbCourse").addEventListener("change", e=>{ $("course").value = e.target.value; loadBank(); render(); if (mb.aoa.length){ autoMap(); renderMap(); $("resPanel").hidden = !(mb.results.length && mb.course===state.bank.id); } });
+$("grade").addEventListener("change", ()=>{ pickDefaults(false); preferNonConflicting(); render(); });
+$("area").addEventListener("change", ()=>{ pickDefaults(false); render(); });
+$("weak").addEventListener("change", ()=>{ pickDefaults(false); render(); });
+$("name").addEventListener("input", render);
+$("pr-she").addEventListener("click", ()=>{ setPron("she"); render(); });
+$("pr-he").addEventListener("click", ()=>{ setPron("he"); render(); });
+$("ds-none").addEventListener("click", ()=>{ setDistract(""); render(); });
+$("ds-some").addEventListener("click", ()=>{ setDistract("some"); preferNonConflicting(); render(); });
+$("ds-often").addEventListener("click", ()=>{ setDistract("often"); preferNonConflicting(); render(); });
+$("editBtn").addEventListener("click", ()=>{
+  const ta = $("commentEdit");
+  if (!state.typing){
+    state.typing = true; ta.value = state.current; ta.hidden = false; $("comment").hidden = true;
+    $("editBtn").textContent = "Done editing"; ta.focus();
+  } else { stopTyping(); renderOutput(); }
+});
+$("commentEdit").addEventListener("input", e=>{ state.manual = e.target.value; renderOutput(); });
+$("undoEdit").addEventListener("click", ()=>{ state.manual = null; stopTyping(); renderOutput(); });
+$("reset").addEventListener("click", ()=>{ pickDefaults(true); render(); });
+$("shuffle").addEventListener("click", ()=>{
+  for (const k of state.bank.order){ const c=candidatesFor(state.bank,k,filters()); if (c.length) state.sel[k]=c[Math.floor(Math.random()*c.length)].i; }
+  render();
+});
+$("copy").addEventListener("click", ()=>copyText(state.current, "Comment copied."));
+$("add").addEventListener("click", ()=>{
+  state.list.push({name:$("name").value.trim()||"Student", course:state.bank.name, grade:$("grade").value, text:state.current});
+  store.set("list", state.list); renderList();
+  $("toast").textContent = "Added to the class list."; setTimeout(()=>{ $("toast").textContent=""; }, 2000);
+});
+$("copyAll").addEventListener("click", ()=>{
+  if (!state.list.length) return;
+  copyText(state.list.map(r=>[r.name,r.grade,r.text.replace(/\t/g," ")].join("\t")).join("\n"), `Copied ${state.list.length} comments.`);
+});
+$("tab-one").addEventListener("click", ()=>showTab("one"));
+$("tab-mb").addEventListener("click", ()=>showTab("mb"));
+$("saveBack").addEventListener("click", ()=>endEdit(true));
+$("cancelEdit").addEventListener("click", ()=>endEdit(false));
+$("file").addEventListener("change", e=>{ const f=e.target.files[0]; if (f) importFile(f); e.target.value=""; });
+$("sheet").addEventListener("change", e=>loadSheet(e.target.value));
+const drop = $("drop");
+["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev, e=>{ e.preventDefault(); drop.classList.add("over"); }));
+["dragleave","drop"].forEach(ev=>drop.addEventListener(ev, e=>{ e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", e=>{ const f=e.dataTransfer.files[0]; if (f) importFile(f); });
+$("gen").addEventListener("click", generate);
+$("cpcol").addEventListener("click", ()=>{
+  if (!mb.results.length) return;
+  const byRow = {}; mb.results.forEach(r=>{ byRow[r.rowIndex] = r.skipped ? "" : r.text; });
+  const lines = dataRows().map((r,i)=>byRow[mb.headerRow+1+i] || "");
+  while (lines.length && !lines[lines.length-1]) lines.pop();
+  copyText(lines.map(l=>/[\t\n"]/.test(l)?`"${l.replace(/"/g,'""')}"`:l).join("\n"), `Copied ${mb.results.filter(r=>!r.skipped).length} comments, one per row in markbook order. Click the first comment cell in your markbook and paste.`, "mbToast");
+});
+$("dlx").addEventListener("click", ()=>{
+  if (!window.XLSX){ mbToast("The spreadsheet library didn't load. Use Download .csv instead."); return; }
+  const ws = XLSX.utils.aoa_to_sheet(exportAoa());
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, (mb.sheet || "Markbook").slice(0,31));
+  const buf = XLSX.write(wb, {bookType:"xlsx", type:"array"});
+  saveFile(`${mb.fileName || "Markbook"} - comments.xlsx`, new Blob([buf]));
+});
+$("dlc").addEventListener("click", ()=>saveFile(`${mb.fileName || "Markbook"} - comments.csv`, "﻿"+csvOf(exportAoa())));
+$("tmpl").addEventListener("click", ()=>{
+  if (!state.bank) return;
+  const head = ["First name","Surname","Pronoun","Grade", ...bankAreas(state.bank).flatMap(a=>areaParts(a).map(p=>`${p} mark`)), "Distracted","Late submission"];
+  const ex = ["Mia","Tran","she","B", ...bankAreas(state.bank).flatMap(a=>areaParts(a).map(()=>"")), "","" ];
+  saveFile(`${state.bank.name} - markbook template.csv`, "﻿"+csvOf([head, ex]));
+});
+$("mbClear").addEventListener("click", ()=>{
+  if ($("mbClear").dataset.sure !== "1"){ $("mbClear").dataset.sure = "1"; $("mbClear").textContent = "Click again to clear"; setTimeout(()=>{ $("mbClear").dataset.sure = ""; $("mbClear").textContent = "Clear markbook"; }, 4000); return; }
+  store.del("mb");
+  Object.assign(mb, {wb:null, fileName:"", sheet:"", aoa:[], headerRow:0, header:[], map:null, results:[], course:""});
+  $("mapPanel").hidden = true; $("resPanel").hidden = true; $("mbClear").hidden = true; $("mbClear").dataset.sure = ""; $("mbClear").textContent = "Clear markbook";
+  $("fileInfo").textContent = "or drop a file here";
+});
+function setMode(m){
+  if (m==="auto") document.documentElement.removeAttribute("data-mode"); else document.documentElement.setAttribute("data-mode", m);
+  ["light","dark","auto"].forEach(x=>$("md-"+x).setAttribute("aria-pressed", x===m));
+  store.set("mode", m);
+}
+["light","dark","auto"].forEach(x=>$("md-"+x).addEventListener("click", ()=>setMode(x)));
+setMode(store.get("mode") || "auto");
+/* ---------- comment banks: upload, parse, keep ---------- */
+function saveBanks(){ try { localStorage.setItem("rcb-banks", JSON.stringify(BANKS)); return true; } catch(e){ return false; } }
+function bankToast(m){ $("bankToast").textContent = m; clearTimeout(bankToast.t); bankToast.t = setTimeout(()=>{ $("bankToast").textContent=""; }, 6000); }
+const CANON = {opening:0, participation:1, progress:2, reflection:9};
+function classify(h){
+  const l = String(h||"").toLowerCase().replace(/^\s*\d+[.)]\s*/,"").trim();
+  if (/how to use|instructions|sample|example|contents/.test(l)) return null;
+  if (/add-?ons?|optional|additional/.test(l)) return "addons";
+  if (/opening|introduc/.test(l)) return "opening";
+  if (/participation|engagement|effort|behaviou?r/.test(l)) return "participation";
+  if (/progress|achievement/.test(l)) return "progress";
+  if (/reflection|improvement|next steps|feedback|goal/.test(l)) return "reflection";
+  if (!l) return null;
+  return "custom";
+}
+function cleanTitle(h){ return String(h||"").replace(/^\s*\d+[.)]\s*/,"").trim(); }
+function normaliseFields(t){
+  return t
+    .replace(/[{\[]\s*first[\s_-]*name\s*[}\]]/gi, "{first_name}")
+    .replace(/\{\s*(he|his|him|himself)\s*[_/\s-]\s*(she|her|herself)\s*\}/gi, (m,a,b)=>`{${a.toLowerCase()}_${b.toLowerCase()}}`);
+}
+function buildBank(name, sections, canonicalOrder){
+  const bank = {id:"b"+Date.now().toString(36)+Math.random().toString(36).slice(2,6), name, order:[], titles:{}, parts:{}};
+  const customKey = {}; let ci = 0;
+  for (const sec of sections){
+    let key = classify(sec.heading);
+    if (key===null) continue;
+    if (key==="custom"){
+      const title = cleanTitle(sec.heading) || "Extra part";
+      key = customKey[title.toLowerCase()] || (customKey[title.toLowerCase()] = "x"+(++ci));
+      bank.titles[key] = title;
+    }
+    (bank.parts[key] ||= []);
+    for (const r of sec.rows){
+      const cells = r.map(c=>String(c??"").replace(/\s+/g," ").trim());
+      while (cells.length && !cells[cells.length-1]) cells.pop();
+      if (!cells.length) continue;
+      const text = cells[cells.length-1];
+      if (/^(comments?|sentences?|text)$/i.test(text)) continue;
+      const label = cells.slice(0,-1).filter(Boolean).join(" · ") || "Any";
+      bank.parts[key].push({label, text: normaliseFields(text)});
+    }
+    if (key!=="addons" && !bank.order.includes(key)) bank.order.push(key);
+  }
+  for (const k of Object.keys(bank.parts)) if (!bank.parts[k].length){ delete bank.parts[k]; bank.order = bank.order.filter(x=>x!==k); }
+  if (canonicalOrder){
+    const pos = k => k in CANON ? CANON[k] : 3 + bank.order.indexOf(k)/100;
+    bank.order.sort((a,b)=>pos(a)-pos(b));
+  }
+  return bank;
+}
+async function parseDocx(file){
+  if (!window.mammoth) throw new Error("The Word reader didn't load. Reload the page and try again.");
+  const {value} = await mammoth.convertToHtml({arrayBuffer: await file.arrayBuffer()});
+  const doc = new DOMParser().parseFromString(value, "text/html");
+  const sections = []; let heading = "";
+  const walk = el => {
+    for (const n of el.children){
+      if (/^H[1-6]$/.test(n.tagName)) heading = n.textContent.trim();
+      else if (n.tagName==="P"){
+        const txt = n.textContent.trim(), strong = n.querySelector("strong");
+        if (strong && strong.textContent.trim()===txt && txt && txt.length<60 && !/[.:]$/.test(txt)) heading = txt;
+      }
+      else if (n.tagName==="TABLE"){
+        const rows = [...n.querySelectorAll("tr")].map(tr=>[...tr.children].map(td=>td.textContent));
+        sections.push({heading, rows});
+      }
+      else if (n.children && n.children.length) walk(n);
+    }
+  };
+  walk(doc.body);
+  return sections;
+}
+function parseSheetRows(aoa){
+  const isComment = v => /^(comments?|sentences?|text)$/i.test(String(v).trim());
+  const h = aoa.findIndex(r=>r.some(isComment));
+  if (h<0) throw new Error("No Comment column was found. Use the spreadsheet template's column headings.");
+  const head = aoa[h].map(v=>String(v).trim().toLowerCase());
+  const ci = head.findIndex(isComment);
+  const pi = head.findIndex(v=>/^(part|section|type)$/.test(v));
+  const li = head.findIndex(v=>/^(label|grade|level|use for|engagement|situation)$/.test(v));
+  const ai = head.findIndex(v=>/^(area|skill|task)$/.test(v));
+  const groups = new Map();
+  for (const r of aoa.slice(h+1)){
+    const text = String(r[ci]??"").trim(); if (!text) continue;
+    const part = pi>-1 ? String(r[pi]??"").trim() || "Opening" : "Opening";
+    const label = li>-1 ? String(r[li]??"").trim() : "";
+    const area = ai>-1 ? String(r[ai]??"").trim() : "";
+    const k = part.toLowerCase();
+    if (!groups.has(k)) groups.set(k, {heading: part, rows: []});
+    groups.get(k).rows.push(area ? [label || "Any", area, text] : [label, text]);
+  }
+  return [...groups.values()];
+}
+function bankWarnings(bank){
+  const w = [];
+  const missing = ["opening","participation","progress","reflection"].filter(k=>!bank.parts[k]);
+  if (missing.length) w.push(`No ${missing.map(k=>PART_NAMES[k]).join(", ")} found`);
+  const all = Object.values(bank.parts).flat();
+  if (!all.some(o=>gradesOf(o.label).size)) w.push("No A to E grades in the labels, so every sentence is offered for every grade");
+  const odd = new Set(all.flatMap(o=>(o.text.match(/\{[^}]+\}/g)||[])).filter(f=>!/^\{(first_name|he_she|his_her|him_her|himself_herself)\}$/.test(f)));
+  if (odd.size) w.push(`Unknown fields: ${[...odd].join(", ")}`);
+  return w;
+}
+function nameFrom(fn){ return fn.replace(/\.[^.]+$/,"").replace(/[_]+/g," ").trim() || "Comment bank"; }
+async function importBankFiles(files){
+  let added = 0, msgs = [];
+  for (const f of files){
+    try {
+      let sections, canonical = false;
+      if (/\.docx$/i.test(f.name)) sections = await parseDocx(f);
+      else if (/\.(xlsx|xls|csv)$/i.test(f.name)){
+        if (!window.XLSX) throw new Error("The spreadsheet reader didn't load. Reload the page and try again.");
+        const wb = XLSX.read(await f.arrayBuffer(), {type:"array"});
+        const aoa = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1, defval:""});
+        sections = parseSheetRows(aoa); canonical = true;
+      } else if (/\.doc$/i.test(f.name)) throw new Error("Older .doc files can't be read. Open it in Word and save it as .docx first.");
+      else throw new Error("Use a .docx, .xlsx or .csv file.");
+      const bank = buildBank(nameFrom(f.name), sections, canonical);
+      if (!bank.order.length) throw new Error("No tables of sentences were found under headings such as Opening, Participation, Progress and Reflection.");
+      const same = BANKS.findIndex(b=>b.name.toLowerCase()===bank.name.toLowerCase());
+      if (same>-1){ bank.id = BANKS[same].id; BANKS[same] = bank; msgs.push(`Updated “${bank.name}”.`); }
+      else { BANKS.push(bank); msgs.push(`Added “${bank.name}”.`); }
+      added++;
+      if (!state.bank) $("course").value = bank.id;
+    } catch(e){ msgs.push(`${f.name}: ${e.message || "couldn't be read."}`); }
+  }
+  if (added && !saveBanks()) msgs.push("This browser wouldn't save the banks, so they'll be gone if you reload.");
+  bankToast(msgs.join(" "));
+  refreshAfterBanks();
+}
+function refreshAfterBanks(){
+  buildCourseSelects();
+  if (BANKS.length){
+    if (!state.bank || !BANKS.some(b=>b.id===state.bank.id)) $("course").value = (BANKS.find(b=>b.id===$("course").value) || BANKS[0]).id;
+    const keep = state.bank && state.bank.id===$("course").value;
+    loadBank(false);
+    if (!keep) state.sel = state.sel || {};
+  } else state.bank = null;
+  renderBanks(); render(); showTab(currentTab);
+}
+function bankToAoa(bank){
+  const aoa = [["Part","Label","Area","Comment"]];
+  const seq = [...bank.order]; const pi = seq.indexOf("progress"); if (bank.parts.addons) seq.splice(pi+1, 0, "addons");
+  for (const k of seq){
+    const title = k==="addons" ? "Optional add-ons" : ((bank.titles||{})[k] || PART_NAMES[k] || k);
+    for (const o of bank.parts[k]||[]){
+      const [label, area] = o.label.split(" · ");
+      aoa.push([title, label==="Any" ? "" : label, area || "", o.text]);
+    }
+  }
+  return aoa;
+}
+function xlsxBlob(aoa, sheet){
+  const ws = XLSX.utils.aoa_to_sheet(aoa); ws["!cols"] = [{wch:16},{wch:20},{wch:14},{wch:110}];
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, sheet.slice(0,31));
+  return new Blob([XLSX.write(wb, {bookType:"xlsx", type:"array"})]);
+}
+function renderBanks(){
+  $("bankEmpty").style.display = BANKS.length ? "none" : "";
+  $("bankBody").innerHTML = BANKS.map((b,i)=>{
+    const seq = [...b.order]; if (b.parts.addons) seq.splice(seq.indexOf("progress")+1, 0, "addons");
+    const parts = seq.map(k=>`${esc(k==="addons"?"Add-ons":((b.titles||{})[k]||PART_NAMES[k]||k))} ${b.parts[k].length}`).join(" · ");
+    const warn = bankWarnings(b).map(w=>`<span class="chip warn">${esc(w)}</span>`).join(" ");
+    return `<tr><td><b id="bn-${i}">${esc(b.name)}</b>${state.bank && state.bank.id===b.id ? ' <span class="chip ok">In use</span>' : ""}</td><td>${parts}${warn?"<br>"+warn:""}</td>
+      <td><div class="row" style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn" type="button" data-use="${i}">Use</button>
+        <button class="btn" type="button" data-ren="${i}">Rename</button>
+        <button class="btn" type="button" data-exp="${i}">Download as spreadsheet</button>
+        <button class="btn" type="button" data-del="${i}">Delete</button></div></td></tr>`;
+  }).join("");
+  const body = $("bankBody");
+  body.querySelectorAll("[data-use]").forEach(b=>b.addEventListener("click",()=>{ $("course").value = BANKS[+b.dataset.use].id; loadBank(); renderBanks(); render(); showTab("one"); }));
+  body.querySelectorAll("[data-exp]").forEach(b=>b.addEventListener("click",()=>{ const bank = BANKS[+b.dataset.exp]; saveFile(`${bank.name}.xlsx`, xlsxBlob(bankToAoa(bank), "Comment bank"), bankToast); }));
+  body.querySelectorAll("[data-ren]").forEach(b=>b.addEventListener("click",()=>{
+    const i = +b.dataset.ren, cell = $("bn-"+i);
+    cell.outerHTML = `<input type="text" id="bn-${i}" value="${esc(BANKS[i].name)}" aria-label="Bank name" style="max-width:280px">`;
+    const inp = $("bn-"+i); inp.focus(); inp.select();
+    const done = ()=>{ const v = inp.value.trim(); if (v){ BANKS[i].name = v; saveBanks(); } buildCourseSelects(); renderBanks(); render(); };
+    inp.addEventListener("keydown", e=>{ if (e.key==="Enter") done(); if (e.key==="Escape") renderBanks(); });
+    inp.addEventListener("blur", done);
+  }));
+  body.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",()=>{
+    if (b.dataset.sure!=="1"){ b.dataset.sure="1"; b.textContent="Click again to delete"; setTimeout(()=>{ b.dataset.sure=""; b.textContent="Delete"; }, 4000); return; }
+    const gone = BANKS.splice(+b.dataset.del, 1)[0]; saveBanks();
+    if (state.bank && gone && state.bank.id===gone.id) state.bank = null;
+    bankToast(`Deleted “${gone.name}”.`); refreshAfterBanks();
+  }));
+}
+const TEMPLATE_ROWS = [
+  ["Part","Label","Area","Comment"],
+  ["Opening","Outstanding (A)","","{first_name} is a diligent and conscientious student who has achieved outstanding results this semester."],
+  ["Opening","High (B)","","{first_name} is an enthusiastic student who has achieved a high standard this semester."],
+  ["Opening","Sound (C)","","{first_name} is a cooperative student who has achieved sound results this semester."],
+  ["Opening","Basic (D)","","{first_name} has demonstrated a basic understanding of the content taught this semester."],
+  ["Opening","Limited (E)","","{first_name} has found aspects of the course challenging this semester."],
+  ["Participation","Highly engaged (A)","","{he_she} participates in class discussions and completes all set activities."],
+  ["Participation","Engaged (B)","","{he_she} contributes to most lessons and completes all set activities."],
+  ["Participation","Steady (C)","","{he_she} contributes to lessons when asked and completes all set activities."],
+  ["Participation","Variable (D)","","{he_she} contributes to lessons when confident and attempts all set activities, however, {he_she} can sometimes be distracted."],
+  ["Participation","Needs support (E)","","{he_she} makes an effort to complete some set activities, however, {he_she} is often easily distracted."],
+  ["Progress","Outstanding (A)","Assignment","{first_name} produced an excellent and well-researched response in the [task name]."],
+  ["Progress","Outstanding (A)","Exam","{first_name} demonstrated extensive knowledge in the half-yearly examination."],
+  ["Progress","High (B)","Assignment","{first_name} produced a strong response with only minor errors in the [task name]."],
+  ["Progress","High (B)","Exam","{first_name} demonstrated strong knowledge in the half-yearly examination."],
+  ["Progress","Sound (C)","Assignment","{first_name} presented relevant information, with some errors, in the [task name]."],
+  ["Progress","Sound (C)","Exam","{first_name} applied a sound knowledge of the course in the half-yearly examination."],
+  ["Progress","Basic (D)","Assignment","{first_name} presented some relevant information in the [task name]."],
+  ["Progress","Basic (D)","Exam","{first_name} applied some knowledge of the course in the half-yearly examination."],
+  ["Progress","Limited (E)","","{first_name} has demonstrated a limited knowledge of the course content, which has affected {his_her} results."],
+  ["Optional add-ons","Late submission","","The late submission of {his_her} assignment has affected {his_her} overall result."],
+  ["Optional add-ons","Absent for a task","","{his_her} absence during the [task name] has affected {his_her} result for this outcome."],
+  ["Reflection","A","","{he_she} is commended for {his_her} sustained effort and is encouraged to maintain {his_her} positive attitude."],
+  ["Reflection","B","","{he_she} is encouraged to regularly revise class content, which may help {him_her} achieve higher results."],
+  ["Reflection","C","","{he_she} is encouraged to complete regular revision, which may help {him_her} improve further."],
+  ["Reflection","D","","{he_she} is encouraged to seek support when necessary, which may help {him_her} reach a higher level."],
+  ["Reflection","E","","{he_she} is encouraged to seek support from {his_her} teacher and revise regularly, which may help {him_her} build a stronger foundation."],
+  ["Reflection","Weak exam","","{he_she} is encouraged to practise past questions under timed conditions, which may help {him_her} perform with greater confidence in examinations."],
+  ["Reflection","Focus","","{he_she} is encouraged to maintain {his_her} focus in class, which may help {him_her} improve further."]
+];
+
+/* ---------- start-up ---------- */
+$("tab-banks").addEventListener("click", ()=>showTab("banks"));
+$("goBanks").addEventListener("click", ()=>showTab("banks"));
+$("bankFile").addEventListener("change", e=>{ const fs=[...e.target.files]; e.target.value=""; if (fs.length) importBankFiles(fs); });
+(()=>{ const d = $("bankDrop");
+  ["dragenter","dragover"].forEach(ev=>d.addEventListener(ev, e=>{ e.preventDefault(); d.classList.add("over"); }));
+  ["dragleave","drop"].forEach(ev=>d.addEventListener(ev, e=>{ e.preventDefault(); d.classList.remove("over"); }));
+  d.addEventListener("drop", e=>{ const fs=[...e.dataTransfer.files]; if (fs.length) importBankFiles(fs); });
+})();
+$("bankTmpl").addEventListener("click", ()=>{
+  if (window.XLSX) saveFile("Comment bank template.xlsx", xlsxBlob(TEMPLATE_ROWS, "Comment bank"), bankToast);
+  else saveFile("Comment bank template.csv", "﻿"+csvOf(TEMPLATE_ROWS), bankToast);
+});
+renderBanks();
+restoreMb();
+render(); renderList();
+(()=>{ const h = location.hash.slice(1); showTab(h==="markbook" ? "mb" : h==="banks" ? "banks" : (BANKS.length ? "one" : "banks")); })();
+
+
+
+</script>
+</body>
+</html>
