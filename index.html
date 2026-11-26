@@ -683,7 +683,22 @@ function autoMap(){
       return {label:p, col, outOf: col>-1 ? guessOutOf(col) : 100};
     })};
   }
+  m.extra = {};
+  for (const k of extraParts(bank)){
+    const sn = partLabel(bank, k), word = sn.split(/\s+/)[0];
+    const col = mb.header.findIndex((h,i)=>h && !used.has(i) && new RegExp(word.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"i").test(h));
+    if (col>-1) used.add(col);
+    m.extra[k] = {label: sn, col, outOf: col>-1 ? guessOutOf(col) : 100, bands: "85, 70, 55, 40"};
+  }
   mb.map = m;
+}
+// extra parts of the comment (for example Hiragana) can take their own mark
+function extraParts(bank){ return (bank.order||[]).filter(k=>/^x\d+$/.test(k)); }
+function partLabel(bank, k){ return (bank.titles||{})[k] || k; }
+function levelFrom(p, bands){
+  const b = String(bands||"").split(/[,\s]+/).map(Number).filter(n=>!isNaN(n));
+  const [a=85, bb=70, c=55, d=40] = b;
+  return p>=a ? "A" : p>=bb ? "B" : p>=c ? "C" : p>=d ? "D" : "E";
 }
 function colSelect(id, val, label, optional){
   const opts = mb.header.map((h,i)=>`<option value="${i}" ${i===val?"selected":""}>${esc(h || `Column ${i+1}`)}</option>`).join("");
@@ -706,11 +721,26 @@ function renderMap(){
     });
   });
   if (!bankAreas(state.bank).length) html += `<p class="help" style="grid-column:1/-1">This bank's Progress sentences aren't split by area, so marks aren't needed.</p>`;
+  m.extra ||= {};
+  extraParts(state.bank).forEach((k,j)=>{
+    const sn = partLabel(state.bank, k);
+    if (!m.extra[k] || m.extra[k].label!==sn) m.extra[k] = {label: sn, col:-1, outOf:100, bands:"85, 70, 55, 40"};
+    const s = m.extra[k];
+    html += `<div class="f"><span>${esc(sn)} mark</span><div class="outof">${colSelect("mX"+j, s.col, "", true).replace(/^<label[^>]*>/,"").replace(/<\/label>$/,"")}<span>out of</span><input type="text" inputmode="decimal" id="mXO${j}" value="${s.outOf}" aria-label="${esc(sn)} out of"></div></div>` +
+      `<label class="f" for="mXB${j}">${esc(sn)} % for A, B, C, D<input type="text" id="mXB${j}" value="${esc(s.bands)}"></label>` +
+      `<p class="help" style="grid-column:1/-1">With a ${esc(sn)} mark, the ${esc(sn)} sentence follows that mark (for example 85% or more gives the A sentence) instead of the overall grade, and a ${esc(sn)} mark well below the others gives the “Weak ${esc(sn)}” Reflection if your bank has one.</p>`;
+  });
   g.innerHTML = html;
   $("mFmt").value = m.nameFormat;
   const bind = (id, fn)=>$(id).addEventListener("change", e=>fn(e.target.value));
   bind("mName", v=>m.name=+v); bind("mFmt", v=>m.nameFormat=v); bind("mGrade", v=>m.grade=+v);
   bind("mPron", v=>m.pron=+v); bind("mDis", v=>m.distract=+v); bind("mLate", v=>m.late=+v);
+  extraParts(state.bank).forEach((k,j)=>{
+    const s = m.extra[k];
+    bind("mX"+j, v=>{ s.col=+v; if (+v>-1){ s.outOf = guessOutOf(+v); $("mXO"+j).value = s.outOf; } });
+    $("mXO"+j).addEventListener("input", e=>{ const n=parseFloat(e.target.value); if (n>0) s.outOf=n; });
+    $("mXB"+j).addEventListener("input", e=>{ s.bands = e.target.value; });
+  });
   bankAreas(state.bank).forEach((a,j)=>{
     m.areas[a].parts.forEach((r,q)=>{
       bind(`mA${j}_${q}`, v=>{ r.col=+v; if (+v>-1){ r.outOf = guessOutOf(+v); $(`mO${j}_${q}`).value = r.outOf; } });
@@ -776,11 +806,19 @@ function generate(){
       const ps = ar.parts.filter(x=>x.col>-1 && x.outOf>0).map(x=>parseFloat(String(r[x.col]).replace("%",""))/x.outOf*100).filter(v=>!isNaN(v));
       if (ps.length) pcts.push({a, p: ps.reduce((s,v)=>s+v,0)/ps.length});
     }
+    const extraGrade = {}, extraP = [];
+    for (const k of extraParts(bank)){
+      const s = (m.extra||{})[k]; if (!s || s.col<0 || !(s.outOf>0)) continue;
+      const v = parseFloat(String(r[s.col]).replace("%",""));
+      if (isNaN(v)) continue;
+      const pc = v/s.outOf*100; extraGrade[k] = levelFrom(pc, s.bands); extraP.push({a: partLabel(bank,k), p: pc});
+    }
     let strongest = "", weakest = "";
-    if (pcts.length){
-      const sorted = [...pcts].sort((x,y)=>y.p-x.p);
-      strongest = sorted[0].a;
-      if (pcts.length>=2){
+    if (pcts.length) strongest = [...pcts].sort((x,y)=>y.p-x.p)[0].a;
+    const allP = [...pcts, ...extraP];
+    if (allP.length){
+      const sorted = [...allP].sort((x,y)=>y.p-x.p);
+      if (allP.length>=2){
         const low = sorted[sorted.length-1], others = sorted.slice(0,-1);
         const avg = others.reduce((s,x)=>s+x.p,0)/others.length;
         if (avg - low.p >= 10) weakest = low.a;
@@ -795,7 +833,7 @@ function generate(){
         else sel[k] = rotate(k+grade, candidatesFor(bank, k, {grade, area:"", weak:""}).filter(o=>!weakOf(o.label) && o.label!=="Focus" && o.label!=="Organisation"));
         continue;
       }
-      let c = candidatesFor(bank, k, f);
+      let c = candidatesFor(bank, k, extraGrade[k] ? {...f, grade: extraGrade[k]} : f);
       if (k==="opening" && distract){ const nc = c.filter(o=>!conflictWord(o.text)); if (nc.length) c = nc; }
       if (!c.length && k==="progress") c = candidatesFor(bank, k, {grade, area:"", weak:""});
       sel[k] = rotate(k+grade+(k==="progress"?strongest:""), c);
@@ -950,8 +988,8 @@ $("dlx").addEventListener("click", ()=>{
 $("dlc").addEventListener("click", ()=>saveFile(`${mb.fileName || "Markbook"} - comments.csv`, "﻿"+csvOf(exportAoa())));
 $("tmpl").addEventListener("click", ()=>{
   if (!state.bank) return;
-  const head = ["First name","Surname","Pronoun","Grade", ...bankAreas(state.bank).flatMap(a=>areaParts(a).map(p=>`${p} mark`)), "Distracted","Late submission"];
-  const ex = ["Mia","Tran","she","B", ...bankAreas(state.bank).flatMap(a=>areaParts(a).map(()=>"")), "","" ];
+  const head = ["First name","Surname","Pronoun","Grade", ...bankAreas(state.bank).flatMap(a=>areaParts(a).map(p=>`${p} mark`)), ...extraParts(state.bank).map(k=>`${partLabel(state.bank,k)} mark`), "Distracted","Late submission"];
+  const ex = ["Mia","Tran","she","B", ...bankAreas(state.bank).flatMap(a=>areaParts(a).map(()=>"")), ...extraParts(state.bank).map(()=>""), "","" ];
   saveFile(`${state.bank.name} - markbook template.csv`, "﻿"+csvOf([head, ex]));
 });
 $("mbClear").addEventListener("click", ()=>{
