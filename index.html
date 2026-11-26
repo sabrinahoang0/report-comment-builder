@@ -728,7 +728,7 @@ function renderMap(){
     const s = m.extra[k];
     html += `<div class="f"><span>${esc(sn)} mark</span><div class="outof">${colSelect("mX"+j, s.col, "", true).replace(/^<label[^>]*>/,"").replace(/<\/label>$/,"")}<span>out of</span><input type="text" inputmode="decimal" id="mXO${j}" value="${s.outOf}" aria-label="${esc(sn)} out of"></div></div>` +
       `<label class="f" for="mXB${j}">${esc(sn)} % for A, B, C, D<input type="text" id="mXB${j}" value="${esc(s.bands)}"></label>` +
-      `<p class="help" style="grid-column:1/-1">With a ${esc(sn)} mark, the ${esc(sn)} sentence follows that mark (for example 85% or more gives the A sentence) instead of the overall grade, and a ${esc(sn)} mark well below the others gives the “Weak ${esc(sn)}” Reflection if your bank has one.</p>`;
+      `<p class="help" style="grid-column:1/-1">With a ${esc(sn)} mark, the ${esc(sn)} sentence follows that mark (for example 85% or more gives the A sentence) instead of the overall grade, and a ${esc(sn)} mark at C level or below gives the “Weak ${esc(sn)}” Reflection if your bank has one.</p>`;
   });
   g.innerHTML = html;
   $("mFmt").value = m.nameFormat;
@@ -811,11 +811,11 @@ function generate(){
       const s = (m.extra||{})[k]; if (!s || s.col<0 || !(s.outOf>0)) continue;
       const v = parseFloat(String(r[s.col]).replace("%",""));
       if (isNaN(v)) continue;
-      const pc = v/s.outOf*100; extraGrade[k] = levelFrom(pc, s.bands); extraP.push({a: partLabel(bank,k), p: pc});
+      const pc = v/s.outOf*100; extraGrade[k] = levelFrom(pc, s.bands); extraP.push({a: partLabel(bank,k), p: pc, g: extraGrade[k]});
     }
     let strongest = "", weakest = "";
     if (pcts.length) strongest = [...pcts].sort((x,y)=>y.p-x.p)[0].a;
-    const allP = [...pcts, ...extraP];
+    const allP = pcts;
     if (allP.length){
       const sorted = [...allP].sort((x,y)=>y.p-x.p);
       if (allP.length>=2){
@@ -823,6 +823,12 @@ function generate(){
         const avg = others.reduce((s,x)=>s+x.p,0)/others.length;
         if (avg - low.p >= 10) weakest = low.a;
       }
+    }
+    // an extra part's Weak Reflection is only for a mark at C level or below
+    const lowExtra = extraP.filter(x=>"CDE".includes(x.g) && weaks.some(w=>w===x.a.toLowerCase())).sort((x,y)=>x.p-y.p)[0];
+    if (lowExtra){
+      const wp = weakest ? (pcts.find(x=>x.a===weakest)||{}).p : Infinity;
+      if (!(wp < lowExtra.p)) weakest = lowExtra.a;
     }
     const weakKey = weakest ? (weaks.find(w=>w===weakest.toLowerCase()) || weaks.find(w=>weakest.toLowerCase().includes(w) || w.includes(weakest.toLowerCase())) || "") : "";
     const f = {grade, area: strongest, weak: ""};
