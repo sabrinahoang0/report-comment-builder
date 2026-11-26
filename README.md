@@ -25,7 +25,7 @@ Upload a **Word document (.docx)** or a **spreadsheet (.xlsx or .csv)**.
 
 ## Markbook format
 
-One row per student. It needs a first-name column (or a "Surname, First name" column) and a grade column (A to E). Optional columns: pronoun or gender, a mark for each assessment area, a mark for any extra part of the comment such as Hiragana, distracted (sometimes / often) and late submission (yes). A mark for an extra part decides that part's sentence (85% or more gives the A sentence by default; the cut-offs can be changed) and, if it is well below the student's other marks, its "Weak …" Reflection. The Markbook tab can download a blank template for the comment bank you're using.
+One row per student. It needs a first-name column (or a "Surname, First name" column) and a grade column (A to E). Optional columns: pronoun or gender, a mark for each assessment area, a mark for any extra part of the comment such as Hiragana, distracted (sometimes / often) and late submission (yes). A mark for an extra part decides that part's sentence (85% or more gives the A sentence by default; the cut-offs can be changed) and, if it is at C level or below, its "Weak …" Reflection. The Markbook tab can download a blank template for the comment bank you're using.
 
 ## Credits
 
