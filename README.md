@@ -19,6 +19,8 @@ Upload a **Word document (.docx)** or a **spreadsheet (.xlsx or .csv)**.
 
 **Word:** give each part a heading (for example "1. Opening", "2. Participation", "3. Progress", "Optional add-ons", "4. Reflection") with a table under it. The last column of each table is the sentence; the columns before it are its label, such as the grade ("Outstanding (A)", "B", "C–D") and, for Progress, the area ("Speaking", "Writing"). Any other heading with a table (such as "Hiragana") becomes an extra part of the comment. Headings such as "How to use" and "Sample comments" are skipped.
 
+**Without tables:** under each part's heading, put the grade as a subheading ("Outstanding (A)") with its sentences below it, or at the start of each line ("Outstanding (A): {first_name} is…", "B – {first_name} is…"). For Progress, add the area after the grade ("High (B) – Speaking: …") or as a smaller subheading. Lines without a `{field}` are treated as notes and left out. Give extra parts a heading style or a number ("4. Hiragana"). Plain text files (.txt or .md, with `#` headings) are read the same way.
+
 **Spreadsheet:** one row per sentence with the columns **Part**, **Label**, **Area** (optional) and **Comment**. Download the template from the Comment banks tab for an example.
 
 **In the sentences** use `{first_name}`, `{he_she}`, `{his_her}`, `{him_her}` and `{himself_herself}`. Put grades A to E in the labels so the right sentences are offered for each grade. Reflection labels starting "Weak" (for example "Weak writing") are used when that area is a student's lowest mark. Words in `[square brackets]` are left for you to fill in.

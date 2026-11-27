@@ -266,8 +266,8 @@ table.res tr.skip td{color:var(--muted);font-style:italic}
     <h2>Your comment banks</h2>
     <p class="help">Banks are kept in this browser only. Nothing is uploaded to a server, so other people and other devices can't see them.</p>
     <div class="drop" id="bankDrop">
-      <label class="btn primary filebtn" for="bankFile">Upload a comment bank<input type="file" id="bankFile" accept=".docx,.xlsx,.xls,.csv" multiple></label>
-      <span class="sub" id="bankInfo">Word (.docx), Excel (.xlsx) or CSV · or drop files here</span>
+      <label class="btn primary filebtn" for="bankFile">Upload a comment bank<input type="file" id="bankFile" accept=".docx,.xlsx,.xls,.csv,.txt,.md" multiple></label>
+      <span class="sub" id="bankInfo">Word (.docx), Excel (.xlsx), CSV or plain text (.txt) · or drop files here</span>
       <button class="btn" type="button" id="bankTmpl">Download spreadsheet template</button>
     </div>
     <div class="toast" id="bankToast"></div>
@@ -277,6 +277,7 @@ table.res tr.skip td{color:var(--muted);font-style:italic}
   <div class="panel">
     <h2>How to lay out a comment bank</h2>
     <p class="help"><b>Word:</b> give each part a heading (for example “1. Opening”, “2. Participation”, “3. Progress”, “Optional add-ons”, “4. Reflection”), with a table under it. The last column of each table is the sentence; the columns before it are its label, such as the grade (“Outstanding (A)”, “B”, “C–D”) and, for Progress, the area (“Speaking”, “Writing”). Any other heading with a table, such as “Hiragana”, becomes an extra part of the comment, in the order it appears. Headings like “How to use” and “Sample comments” are skipped.</p>
+    <p class="help"><b>No tables?</b> That works too. Under each part's heading, put the grade as a subheading (“Outstanding (A)”) with its sentences below it, or at the start of the line (“Outstanding (A): {first_name} is a diligent…”, “B – {first_name} is…”). For Progress, add the area after the grade (“High (B) – Speaking: …”) or as a smaller subheading. Lines without a {field} are treated as notes and left out. Use a heading style or a number (“4. Hiragana”) for extra parts so they aren't read as labels. Plain text (.txt or .md) files work the same way, with # for headings.</p>
     <p class="help"><b>Spreadsheet:</b> one row per sentence, with the columns <b>Part</b>, <b>Label</b>, <b>Area</b> (optional, for Progress) and <b>Comment</b>. Download the template to see an example.</p>
     <p class="help"><b>In the sentences</b>, use {first_name}, {he_she}, {his_her}, {him_her} and {himself_herself}; they are filled in for each student. Put grades A to E in the labels so the right sentences are offered. Reflection labels starting “Weak” (for example “Weak writing”) are used when that area is a student's lowest mark, and a Reflection labelled “Focus” suits distracted students. Words in [square brackets] are left for you to fill in.</p>
   </div>
@@ -1063,27 +1064,86 @@ function buildBank(name, sections, canonicalOrder){
   }
   return bank;
 }
+// A bank can be tables under headings, or lines of text under headings with the grade
+// as a subheading or at the start of the line ("Outstanding (A): {first_name} is ...").
 async function parseDocx(file){
   if (!window.mammoth) throw new Error("The Word reader didn't load. Reload the page and try again.");
   const {value} = await mammoth.convertToHtml({arrayBuffer: await file.arrayBuffer()});
   const doc = new DOMParser().parseFromString(value, "text/html");
-  const sections = []; let heading = "";
+  const tokens = [];
   const walk = el => {
     for (const n of el.children){
-      if (/^H[1-6]$/.test(n.tagName)) heading = n.textContent.trim();
-      else if (n.tagName==="P"){
-        const txt = n.textContent.trim(), strong = n.querySelector("strong");
-        if (strong && strong.textContent.trim()===txt && txt && txt.length<60 && !/[.:]$/.test(txt)) heading = txt;
+      const tag = n.tagName;
+      if (/^H[1-6]$/.test(tag)) tokens.push({type:"h", level:+tag[1], text:n.textContent.trim()});
+      else if (tag==="P"){
+        // a line break inside a paragraph (Shift+Enter) starts a new line
+        for (const part of n.innerHTML.split(/<br\s*\/?>/i)){
+          const tmp = document.createElement("div"); tmp.innerHTML = part;
+          const txt = tmp.textContent.replace(/\s+/g," ").trim(); if (!txt) continue;
+          const strong = tmp.querySelector("strong");
+          tokens.push({type:"p", text:txt, bold: !!(strong && strong.textContent.trim()===txt)});
+        }
       }
-      else if (n.tagName==="TABLE"){
-        const rows = [...n.querySelectorAll("tr")].map(tr=>[...tr.children].map(td=>td.textContent));
-        sections.push({heading, rows});
+      else if (tag==="UL" || tag==="OL"){
+        for (const li of n.children){
+          const own = [...li.childNodes].filter(c=>!(c.nodeType===1 && /^(UL|OL)$/.test(c.tagName))).map(c=>c.textContent).join(" ").replace(/\s+/g," ").trim();
+          if (own) tokens.push({type:"li", text:own});
+          for (const sub of li.querySelectorAll(":scope > ul, :scope > ol")) walk({children:[sub]});
+        }
       }
+      else if (tag==="TABLE") tokens.push({type:"table", rows:[...n.querySelectorAll("tr")].map(tr=>[...tr.children].map(td=>td.textContent))});
       else if (n.children && n.children.length) walk(n);
     }
   };
   walk(doc.body);
-  return sections;
+  return tokensToSections(tokens);
+}
+async function parseText(file){
+  const tokens = [];
+  for (const raw of (await file.text()).split(/\r?\n/)){
+    const line = raw.trim(); if (!line) continue;
+    let m;
+    if ((m = line.match(/^(#{1,6})\s+(.*)$/))) tokens.push({type:"h", level:m[1].length, text:m[2].replace(/\*\*/g,"").trim()});
+    else if ((m = line.match(/^\*\*(.+?)\*\*:?$/))) tokens.push({type:"p", text:m[1].trim(), bold:true});
+    else if ((m = line.match(/^[-*•]\s+(.*)$/))) tokens.push({type:"li", text:m[1].replace(/\*\*/g,"").trim()});
+    else tokens.push({type:"p", text:line.replace(/\*\*/g,""), bold:false});
+  }
+  return tokensToSections(tokens);
+}
+const LABEL_SPLIT = /\s+[·|–—-]\s+|\s*·\s*/;
+function looksLikeLabel(s){ return s.length<=45 && !/[{}]/.test(s) && !/[.!?]$/.test(s.replace(/:$/,"")); }
+function tokensToSections(tokens){
+  const sections = []; let cur = null, labels = [];
+  const startPart = h => { cur = {heading:h, rows:[]}; sections.push(cur); labels = []; };
+  for (const tk of tokens){
+    if (tk.type==="table"){ if (!cur) startPart(""); cur.rows.push(...tk.rows); continue; }
+    const text = tk.text.replace(/:$/,"").trim(); if (!text) continue;
+    const hasField = /\{[^}]+\}/.test(tk.text);
+    const headingLike = tk.type==="h" || ((tk.bold || tk.type==="p") && looksLikeLabel(tk.text) && !hasField);
+    if (headingLike){
+      const k = classify(text), numbered = /^\s*\d+[.)]\s+\S/.test(text);
+      const isPart = k===null || k!=="custom" || numbered || (tk.type==="h" && tk.level<=2) || !cur;
+      if (isPart){ startPart(text); if (k===null) cur.skip = true; }
+      else {
+        const lvl = tk.type==="h" ? tk.level : 9;
+        labels = labels.filter(l=>l.level<lvl); labels.push({level:lvl, text});
+      }
+      continue;
+    }
+    if (!cur || cur.skip || !hasField) continue;        // notes and instructions have no {fields}
+    let label = labels.map(l=>l.text), sentence = tk.text;
+    const m = tk.text.match(/^([^{}:]{1,45}):\s+(.*\{.*)$/) || tk.text.match(/^([^{}:]{1,45}?)\s+[–—-]\s+(.*\{.*)$/);
+    if (m && looksLikeLabel(m[1].trim())){
+      const own = m[1].trim();
+      // a grade at the start of the line replaces a grade subheading above it
+      // a grade at the start of the line replaces the subheadings above it; an area alone keeps the grade
+      label = own.split(LABEL_SPLIT).some(x=>gradesOf(x.trim()).size) ? [] : label.filter(l=>gradesOf(l).size);
+      label = [...label, own]; sentence = m[2].trim();
+    }
+    const parts = label.flatMap(l=>l.split(LABEL_SPLIT)).map(s=>s.trim()).filter(Boolean);
+    cur.rows.push([...parts, sentence]);
+  }
+  return sections.filter(s=>!s.skip).map(s=>({heading:s.heading, rows:s.rows}));
 }
 function parseSheetRows(aoa){
   const isComment = v => /^(comments?|sentences?|text)$/i.test(String(v).trim());
@@ -1123,13 +1183,14 @@ async function importBankFiles(files){
     try {
       let sections, canonical = false;
       if (/\.docx$/i.test(f.name)) sections = await parseDocx(f);
+      else if (/\.(txt|md)$/i.test(f.name)) sections = await parseText(f);
       else if (/\.(xlsx|xls|csv)$/i.test(f.name)){
         if (!window.XLSX) throw new Error("The spreadsheet reader didn't load. Reload the page and try again.");
         const wb = XLSX.read(await f.arrayBuffer(), {type:"array"});
         const aoa = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1, defval:""});
         sections = parseSheetRows(aoa); canonical = true;
       } else if (/\.doc$/i.test(f.name)) throw new Error("Older .doc files can't be read. Open it in Word and save it as .docx first.");
-      else throw new Error("Use a .docx, .xlsx or .csv file.");
+      else throw new Error("Use a .docx, .xlsx, .csv, .txt or .md file.");
       const bank = buildBank(nameFrom(f.name), sections, canonical);
       if (!bank.order.length) throw new Error("No tables of sentences were found under headings such as Opening, Participation, Progress and Reflection.");
       const same = BANKS.findIndex(b=>b.name.toLowerCase()===bank.name.toLowerCase());
