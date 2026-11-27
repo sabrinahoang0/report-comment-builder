@@ -229,7 +229,7 @@ table.res tr.skip td{color:var(--muted);font-style:italic}
 <section class="view mb" id="view-mb" role="tabpanel" hidden>
   <div class="panel">
     <h2>1. Import a markbook</h2>
-    <p class="help">Excel (.xlsx) or CSV. Each row is a student. It needs a first-name column and a grade column (A to E). Optional columns: pronoun or gender, a mark for each assessment area, distracted (sometimes or often) and late submission (yes). The comment bank chosen below decides which sentences are used.</p>
+    <p class="help">Excel (.xlsx) or CSV. Each row is a student. It needs a first-name column and a grade column (A to E). Optional columns: pronoun or gender, a mark for each assessment area, distracted (sometimes or often), late submission (yes) and special circumstances (for example “absent: Role Play”, “illness”, “not submitted: Scrapbook” or “N/A: extended leave”; text after the colon fills in the task name or reason). The comment bank chosen below decides which sentences are used.</p>
     <div class="drop" id="drop">
       <label class="f" for="mbCourse">Comment bank<select id="mbCourse"></select></label>
       <label class="btn primary filebtn" for="file">Import markbook<input type="file" id="file" accept=".xlsx,.xls,.csv,text/csv"></label>
@@ -669,12 +669,14 @@ function autoMap(){
     grade: findCol([/^grade$/i]) ,
     distract: findCol([/distract|focus/i]),
     late: findCol([/late/i]),
+    special: findCol([/special|circumstance|misadventure|exemption|absen|illness/i]),
     areas:{}
   };
   if (m.name<0) m.name = findCol([/name|student/i],/surname|last|family/i);
   if (m.grade<0) m.grade = findCol([/grade|overall|result/i]);
   m.nameFormat = "auto";
-  const used = new Set([m.name,m.pron,m.grade,m.distract,m.late]);
+  if (m.special === m.late) m.special = -1;
+  const used = new Set([m.name,m.pron,m.grade,m.distract,m.late,m.special]);
   for (const a of bankAreas(bank)){
     m.areas[a] = {parts: areaParts(a).map(p=>{
       const hints = AREA_HINTS[p.toLowerCase()] || [new RegExp(p.split(" ")[0],"i")];
@@ -711,7 +713,8 @@ function renderMap(){
     colSelect("mGrade", m.grade, "Grade A to E (required)", false) +
     colSelect("mPron", m.pron, "Pronoun or gender", true) +
     colSelect("mDis", m.distract, "Distracted (sometimes / often)", true) +
-    colSelect("mLate", m.late, "Late submission (yes)", true);
+    colSelect("mLate", m.late, "Late submission (yes)", true) +
+    colSelect("mSpec", m.special===undefined ? -1 : m.special, "Special circumstances (absent, illness, not submitted, N/A)", true);
   normaliseMap(m);
   bankAreas(state.bank).forEach((a,j)=>{
     if (!m.areas[a]) m.areas[a] = {parts: areaParts(a).map(p=>({label:p,col:-1,outOf:100}))};
@@ -734,7 +737,7 @@ function renderMap(){
   $("mFmt").value = m.nameFormat;
   const bind = (id, fn)=>$(id).addEventListener("change", e=>fn(e.target.value));
   bind("mName", v=>m.name=+v); bind("mFmt", v=>m.nameFormat=v); bind("mGrade", v=>m.grade=+v);
-  bind("mPron", v=>m.pron=+v); bind("mDis", v=>m.distract=+v); bind("mLate", v=>m.late=+v);
+  bind("mPron", v=>m.pron=+v); bind("mDis", v=>m.distract=+v); bind("mLate", v=>m.late=+v); bind("mSpec", v=>m.special=+v);
   extraParts(state.bank).forEach((k,j)=>{
     const s = m.extra[k];
     bind("mX"+j, v=>{ s.col=+v; if (+v>-1){ s.outOf = guessOutOf(+v); $("mXO"+j).value = s.outOf; } });
@@ -778,6 +781,34 @@ function distractOf(v){
 }
 function yes(v){ return /^(y|yes|true|1|x|late|✓|✔)$/i.test(String(v).trim()); }
 
+// a special circumstances cell, e.g. "absent: Role Play; illness", turns on the matching add-ons
+const SPECIAL_RULES = [
+  [/late/i, /^late/i],
+  [/absen/i, /absen/i],
+  [/injur|\bill\b|illness|sick|misadventure|medical/i, /injur|ill/i],
+  [/not submit|non[- ]?submi|did ?n.?t submit|missing|incomplete/i, /not submit/i],
+  [/^\s*n\s*\/?\s*a\b|exempt/i, /^N\/A/i]
+];
+function specialAddons(v, adds){
+  const out = {addons:{}, text:{}, unknown:[]};
+  const s = String(v ?? "").trim(); if (!s) return out;
+  for (const part of s.split(/[;\n]+/).map(x=>x.trim()).filter(Boolean)){
+    let hit = false;
+    for (const [re, lab] of SPECIAL_RULES){
+      if (!re.test(part)) continue;
+      const i = adds.findIndex(o=>lab.test(o.label));
+      if (i>-1){
+        out.addons[i] = true; hit = true;
+        const sep = part.match(/[:–—]|\s-\s/);
+        const detail = sep ? part.slice(sep.index + sep[0].length).replace(/^\s+|[\s.]+$/g, "").replace(/^(for|from|in|during|the)\s+/i, "") : "";
+        if (detail) out.text[i] = [detail];
+      }
+      break;
+    }
+    if (!hit) out.unknown.push(part);
+  }
+  return out;
+}
 function generate(){
   const m = mb.map, bank = state.bank;
   if (m.name<0 || m.grade<0){ mbToast("Choose the first-name and grade columns first."); return; }
@@ -795,6 +826,14 @@ function generate(){
     if (!String(raw||"").trim()) return;
     const name = firstNameOf(raw, m.nameFormat);
     const grade = gradeOf(r[m.grade]);
+    const sp = (m.special>-1) ? specialAddons(r[m.special], bank.parts.addons||[]) : {addons:{}, text:{}, unknown:[]};
+    const naI = (bank.parts.addons||[]).findIndex(o=>/^N\/A/i.test(o.label));
+    if (!grade && naI>-1 && sp.addons[naI]){
+      const pron0 = (m.pron>-1 && pronOf(r[m.pron])) || state.pron;
+      const ctx0 = {name, pron:pron0, distract:"", focus:false, addons:{[naI]:true}, addonText:{[naI]: sp.text[naI]||[]}};
+      mb.results.push({rowIndex, raw, name, grade:"N/A", pron:pron0, distract:"", late:false, strongest:"", weakest:"", weakKey:"", sel:{}, ctx:ctx0, text: assembleFor(bank, {}, ctx0).text, edited:false, na:true});
+      return;
+    }
     if (!grade){ mb.results.push({rowIndex, raw, name, grade:String(r[m.grade]||"").trim()||"—", skipped:true, text:"", why:"No A to E grade"}); return; }
     const pron = (m.pron>-1 && pronOf(r[m.pron])) || state.pron;
     const distract = m.distract>-1 ? distractOf(r[m.distract]) : "";
@@ -845,8 +884,8 @@ function generate(){
       sel[k] = rotate(k+grade+(k==="progress"?strongest:""), c);
       if (sel[k]===undefined) delete sel[k];
     }
-    const addons = {}; if (late && lateIdx>-1) addons[lateIdx] = true;
-    const ctx = {name, pron, distract, focus: $("mbFocus").checked, addons, addonText:{}};
+    const addons = {...sp.addons}; if (late && lateIdx>-1) addons[lateIdx] = true;
+    const ctx = {name, pron, distract, focus: $("mbFocus").checked, addons, addonText:{...sp.text}};
     // avoid repeated words: try the other Openings (and the grade's other Reflections) for this grade
     const score = s => repeatsIn(assembleFor(bank, s, ctx).text, name).length;
     if (score(sel)){
@@ -862,7 +901,7 @@ function generate(){
       }
     }
     const {text} = assembleFor(bank, sel, ctx);
-    mb.results.push({rowIndex, raw, name, grade, pron, distract, late, strongest, weakest, weakKey, sel, ctx, text, edited:false});
+    mb.results.push({rowIndex, raw, name, grade, pron, distract, late, strongest, weakest, weakKey, sel, ctx, text, edited:false, specialUnknown: sp.unknown});
   });
   mb.course = bank.id;
   renderResults();
@@ -885,7 +924,7 @@ function renderResults(){
     if (r.skipped) return `<tr class="skip"><td class="n">${r.rowIndex+1}</td><td>${esc(r.raw)}</td><td>${esc(r.grade)}</td><td></td><td></td><td>${esc(r.why)}: no comment written.</td><td></td></tr>`;
     const hl = highlight(r.text, r.name), html = hl.html;
     const clash = hl.clash.length;
-    return `<tr><td class="n">${r.rowIndex+1}</td><td><b>${esc(r.raw)}</b>${r.edited?'<br><span class="chip ok">Edited</span>':""}${clash?'<br><span class="chip bad">Contradiction</span>':""}</td><td>${r.grade}</td><td>${esc(r.strongest||"—")}</td><td>${esc(r.weakest||"—")}</td><td class="c">${html}</td><td><button class="btn" type="button" data-e="${i}">Edit</button></td></tr>`;
+    return `<tr><td class="n">${r.rowIndex+1}</td><td><b>${esc(r.raw)}</b>${r.edited?'<br><span class="chip ok">Edited</span>':""}${clash?'<br><span class="chip bad">Contradiction</span>':""}${(r.specialUnknown||[]).length?`<br><span class="chip warn">Special circumstances not recognised: ${esc(r.specialUnknown.join("; "))}</span>`:""}</td><td>${r.grade}</td><td>${esc(r.strongest||"—")}</td><td>${esc(r.weakest||"—")}</td><td class="c">${html}</td><td><button class="btn" type="button" data-e="${i}">Edit</button></td></tr>`;
   }).join("");
   $("resBody").querySelectorAll("[data-e]").forEach(b=>b.addEventListener("click",()=>editResult(+b.dataset.e)));
 }
@@ -911,7 +950,7 @@ function endEdit(save){
     const r = mb.results[i];
     r.text = state.current; r.edited = true; r.sel = {...state.sel};
     r.ctx = {...ctxNow(), addons:{...state.addons}, addonText: JSON.parse(JSON.stringify(state.addonText))};
-    r.grade = $("grade").value; r.pron = state.pron; r.distract = state.distract; r.ctx.focus = state.focus;
+    r.grade = r.na ? "N/A" : $("grade").value; r.pron = state.pron; r.distract = state.distract; r.ctx.focus = state.focus;
     renderResults(); saveMb();
   }
   state.editing = null; $("editBar").hidden = true; showTab("mb");
@@ -994,8 +1033,8 @@ $("dlx").addEventListener("click", ()=>{
 $("dlc").addEventListener("click", ()=>saveFile(`${mb.fileName || "Markbook"} - comments.csv`, "﻿"+csvOf(exportAoa())));
 $("tmpl").addEventListener("click", ()=>{
   if (!state.bank) return;
-  const head = ["First name","Surname","Pronoun","Grade", ...bankAreas(state.bank).flatMap(a=>areaParts(a).map(p=>`${p} mark`)), ...extraParts(state.bank).map(k=>`${partLabel(state.bank,k)} mark`), "Distracted","Late submission"];
-  const ex = ["Mia","Tran","she","B", ...bankAreas(state.bank).flatMap(a=>areaParts(a).map(()=>"")), ...extraParts(state.bank).map(()=>""), "","" ];
+  const head = ["First name","Surname","Pronoun","Grade", ...bankAreas(state.bank).flatMap(a=>areaParts(a).map(p=>`${p} mark`)), ...extraParts(state.bank).map(k=>`${partLabel(state.bank,k)} mark`), "Distracted","Late submission","Special circumstances"];
+  const ex = ["Mia","Tran","she","B", ...bankAreas(state.bank).flatMap(a=>areaParts(a).map(()=>"")), ...extraParts(state.bank).map(()=>""), "","","" ];
   saveFile(`${state.bank.name} - markbook template.csv`, "﻿"+csvOf([head, ex]));
 });
 $("mbClear").addEventListener("click", ()=>{
