@@ -21,6 +21,8 @@ Upload a **Word document (.docx)** or a **spreadsheet (.xlsx or .csv)**.
 
 **Without tables:** under each part's heading, put the grade as a subheading ("Outstanding (A)") with its sentences below it, or at the start of each line ("Outstanding (A): {first_name} is…", "B – {first_name} is…"). For Progress, add the area after the grade ("High (B) – Speaking: …") or as a smaller subheading. Lines without a `{field}` are treated as notes and left out. Give extra parts a heading style or a number ("4. Hiragana"). Plain text files (.txt or .md, with `#` headings) are read the same way.
 
+**Colour-coded:** if your Word bank shows the grade by font colour instead of writing it (for example green sentences for A), upload it as it is. The colours it uses are listed with the bank on the Comment banks tab, and you choose which grade each colour stands for. A grade written in the label always wins over the colour.
+
 **Spreadsheet:** one row per sentence with the columns **Part**, **Label**, **Area** (optional) and **Comment**. Download the template from the Comment banks tab for an example.
 
 **In the sentences** use `{first_name}`, `{he_she}`, `{his_her}`, `{him_her}` and `{himself_herself}`. Put grades A to E in the labels so the right sentences are offered for each grade. Reflection labels starting "Weak" (for example "Weak writing") are used when that area is a student's lowest mark. Words in `[square brackets]` are left for you to fill in.
@@ -31,4 +33,4 @@ One row per student. It needs a first-name column (or a "Surname, First name" co
 
 ## Credits
 
-Word files are read with [mammoth.js](https://github.com/mwilliamson/mammoth.js) and spreadsheets with [SheetJS](https://sheetjs.com/); their licences are in the `vendor` folder.
+Word files are read with [mammoth.js](https://github.com/mwilliamson/mammoth.js) and [JSZip](https://stuk.github.io/jszip/), and spreadsheets with [SheetJS](https://sheetjs.com/); their licences are in the `vendor` folder.

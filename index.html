@@ -109,6 +109,10 @@ textarea.hidden{position:absolute;left:-9999px}
 .tab{font:inherit;font-weight:700;font-size:.95rem;padding:9px 16px;border:1px solid var(--line);border-bottom:0;border-radius:8px 8px 0 0;background:var(--bg);color:var(--muted);cursor:pointer}
 .tab[aria-selected=true]{background:var(--panel);color:var(--accent)}
 [hidden]{display:none!important}
+.colmap{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.colrow{display:flex;gap:8px;align-items:center;font-size:.88rem;flex-wrap:wrap}
+.colrow select{width:auto;padding:4px 6px;font-size:.88rem}
+.sw{width:18px;height:18px;border-radius:4px;border:1px solid var(--line);flex:none}
 .outof select{flex:1;min-width:0}
 .mb{max-width:1240px;margin:0 auto;padding:12px 20px 40px;display:flex;flex-direction:column;gap:16px}
 .mb h2{font:600 1.15rem/1.2 var(--prose);margin:0 0 6px}
@@ -278,6 +282,7 @@ table.res tr.skip td{color:var(--muted);font-style:italic}
     <h2>How to lay out a comment bank</h2>
     <p class="help"><b>Word:</b> give each part a heading (for example “1. Opening”, “2. Participation”, “3. Progress”, “Optional add-ons”, “4. Reflection”), with a table under it. The last column of each table is the sentence; the columns before it are its label, such as the grade (“Outstanding (A)”, “B”, “C–D”) and, for Progress, the area (“Speaking”, “Writing”). Any other heading with a table, such as “Hiragana”, becomes an extra part of the comment, in the order it appears. Headings like “How to use” and “Sample comments” are skipped.</p>
     <p class="help"><b>No tables?</b> That works too. Under each part's heading, put the grade as a subheading (“Outstanding (A)”) with its sentences below it, or at the start of the line (“Outstanding (A): {first_name} is a diligent…”, “B – {first_name} is…”). For Progress, add the area after the grade (“High (B) – Speaking: …”) or as a smaller subheading. Lines without a {field} are treated as notes and left out. Use a heading style or a number (“4. Hiragana”) for extra parts so they aren't read as labels. Plain text (.txt or .md) files work the same way, with # for headings.</p>
+    <p class="help"><b>Colour-coded?</b> If your Word bank shows the grade by font colour instead of writing it (for example green sentences for A), upload it as it is. The colours it uses are listed with the bank, and you choose which grade each colour stands for. A grade written in the label always wins over the colour.</p>
     <p class="help"><b>Spreadsheet:</b> one row per sentence, with the columns <b>Part</b>, <b>Label</b>, <b>Area</b> (optional, for Progress) and <b>Comment</b>. Download the template to see an example.</p>
     <p class="help"><b>In the sentences</b>, use {first_name}, {he_she}, {his_her}, {him_her} and {himself_herself}; they are filled in for each student. Put grades A to E in the labels so the right sentences are offered. Reflection labels starting “Weak” (for example “Weak writing”) are used when that area is a student's lowest mark, and a Reflection labelled “Focus” suits distracted students. Words in [square brackets] are left for you to fill in.</p>
   </div>
@@ -285,6 +290,7 @@ table.res tr.skip td{color:var(--muted);font-style:italic}
 <textarea class="hidden" id="clip" aria-hidden="true" tabindex="-1"></textarea>
 <script src="vendor/mammoth.browser.min.js"></script>
 <script src="vendor/xlsx.full.min.js"></script>
+<script src="vendor/jszip.min.js"></script>
 <script>
 let BANKS = (()=>{ try { return JSON.parse(localStorage.getItem("rcb-banks")) || []; } catch(e){ return []; } })();
 const PART_NAMES = {opening:"Opening", participation:"Participation", progress:"Progress", script:"Script", reflection:"Reflection"};
@@ -1053,7 +1059,7 @@ function buildBank(name, sections, canonicalOrder){
       const text = cells[cells.length-1];
       if (/^(comments?|sentences?|text)$/i.test(text)) continue;
       const label = cells.slice(0,-1).filter(Boolean).join(" · ") || "Any";
-      bank.parts[key].push({label, text: normaliseFields(text)});
+      bank.parts[key].push({label, text: normaliseFields(text), ...(r.color ? {color: r.color} : {})});
     }
     if (key!=="addons" && !bank.order.includes(key)) bank.order.push(key);
   }
@@ -1066,9 +1072,40 @@ function buildBank(name, sections, canonicalOrder){
 }
 // A bank can be tables under headings, or lines of text under headings with the grade
 // as a subheading or at the start of the line ("Outstanding (A): {first_name} is ...").
+// font colours, read straight from the Word file: paragraph text -> its main colour
+function normKey(s){ return String(s||"").replace(/\s+/g," ").trim().toLowerCase(); }
+async function readColours(buf){
+  const map = new Map();
+  if (!window.JSZip) return map;
+  try {
+    const zip = await JSZip.loadAsync(buf);
+    const xml = await zip.file("word/document.xml").async("string");
+    const doc = new DOMParser().parseFromString(xml, "application/xml");
+    const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+    for (const p of doc.getElementsByTagNameNS(W, "p")){
+      const weight = {}; let text = "";
+      for (const r of p.getElementsByTagNameNS(W, "r")){
+        const tx = [...r.getElementsByTagNameNS(W, "t")].map(x=>x.textContent).join("");
+        text += tx;
+        const n = tx.replace(/\s/g, "").length; if (!n) continue;
+        const c = r.getElementsByTagNameNS(W, "color")[0];
+        const v = c ? (c.getAttributeNS(W, "val") || c.getAttribute("w:val") || "") : "";
+        const hex = /^[0-9a-f]{6}$/i.test(v) ? v.toUpperCase() : "";
+        weight[hex] = (weight[hex]||0) + n;
+      }
+      const key = normKey(text); if (!key) continue;
+      const best = Object.entries(weight).sort((a,b)=>b[1]-a[1])[0];
+      if (best && best[0]) map.set(key, best[0]);
+    }
+  } catch(e){}
+  return map;
+}
 async function parseDocx(file){
   if (!window.mammoth) throw new Error("The Word reader didn't load. Reload the page and try again.");
-  const {value} = await mammoth.convertToHtml({arrayBuffer: await file.arrayBuffer()});
+  const buf = await file.arrayBuffer();
+  const colours = await readColours(buf.slice(0));
+  const colourOf = (...texts)=>{ for (const s of texts){ const c = colours.get(normKey(s)); if (c) return c; } return ""; };
+  const {value} = await mammoth.convertToHtml({arrayBuffer: buf});
   const doc = new DOMParser().parseFromString(value, "text/html");
   const tokens = [];
   const walk = el => {
@@ -1081,17 +1118,21 @@ async function parseDocx(file){
           const tmp = document.createElement("div"); tmp.innerHTML = part;
           const txt = tmp.textContent.replace(/\s+/g," ").trim(); if (!txt) continue;
           const strong = tmp.querySelector("strong");
-          tokens.push({type:"p", text:txt, bold: !!(strong && strong.textContent.trim()===txt)});
+          tokens.push({type:"p", text:txt, bold: !!(strong && strong.textContent.trim()===txt), color: colourOf(txt, n.textContent)});
         }
       }
       else if (tag==="UL" || tag==="OL"){
         for (const li of n.children){
           const own = [...li.childNodes].filter(c=>!(c.nodeType===1 && /^(UL|OL)$/.test(c.tagName))).map(c=>c.textContent).join(" ").replace(/\s+/g," ").trim();
-          if (own) tokens.push({type:"li", text:own});
+          if (own) tokens.push({type:"li", text:own, color: colourOf(own)});
           for (const sub of li.querySelectorAll(":scope > ul, :scope > ol")) walk({children:[sub]});
         }
       }
-      else if (tag==="TABLE") tokens.push({type:"table", rows:[...n.querySelectorAll("tr")].map(tr=>[...tr.children].map(td=>td.textContent))});
+      else if (tag==="TABLE") tokens.push({type:"table", rows:[...n.querySelectorAll("tr")].map(tr=>{
+        const row = [...tr.children].map(td=>td.textContent);
+        const c = colourOf(row[row.length-1]||""); if (c) row.color = c;
+        return row;
+      })});
       else if (n.children && n.children.length) walk(n);
     }
   };
@@ -1141,7 +1182,8 @@ function tokensToSections(tokens){
       label = [...label, own]; sentence = m[2].trim();
     }
     const parts = label.flatMap(l=>l.split(LABEL_SPLIT)).map(s=>s.trim()).filter(Boolean);
-    cur.rows.push([...parts, sentence]);
+    const row = [...parts, sentence]; if (tk.color) row.color = tk.color;
+    cur.rows.push(row);
   }
   return sections.filter(s=>!s.skip).map(s=>({heading:s.heading, rows:s.rows}));
 }
@@ -1166,8 +1208,37 @@ function parseSheetRows(aoa){
   }
   return [...groups.values()];
 }
+// colour-coded banks: each font colour can stand for a grade
+const GRADE_NAMES = {A:"Outstanding", B:"High", C:"Sound", D:"Basic", E:"Limited"};
+function setupColours(bank, prev){
+  const found = {};
+  for (const [k, list] of Object.entries(bank.parts)){
+    if (k==="addons") continue;
+    for (const o of list) if (o.color) (found[o.color] ||= {hex:o.color, count:0, sample:o.text}).count++;
+  }
+  const list = Object.values(found).sort((a,b)=>b.count-a.count);
+  if (!list.length || (list.length===1 && list[0].hex==="000000")) return;
+  bank.colors = list;
+  bank.colorMap = Object.assign({}, prev && prev.colorMap);
+  applyColours(bank);
+}
+function applyColours(bank){
+  if (!bank.colors) return;
+  for (const [k, list] of Object.entries(bank.parts)){
+    if (k==="addons") continue;
+    for (const o of list){
+      if (!o.color) continue;
+      if (o.baseLabel===undefined) o.baseLabel = o.label;
+      const g = bank.colorMap[o.color], base = o.baseLabel;
+      o.label = (g && !gradesOf(base).size && !weakOf(base) && !/^(focus|organisation)$/i.test(base))
+        ? [`${GRADE_NAMES[g]} (${g})`, ...base.split(" · ").filter(x=>x && x!=="Any")].join(" · ")
+        : base;
+    }
+  }
+}
 function bankWarnings(bank){
   const w = [];
+  if (bank.colors && bank.colors.some(c=>c.hex!=="000000" && !bank.colorMap[c.hex])) w.push("Choose a grade for each colour below");
   const missing = ["opening","participation","progress","reflection"].filter(k=>!bank.parts[k]);
   if (missing.length) w.push(`No ${missing.map(k=>PART_NAMES[k]).join(", ")} found`);
   const all = Object.values(bank.parts).flat();
@@ -1194,6 +1265,8 @@ async function importBankFiles(files){
       const bank = buildBank(nameFrom(f.name), sections, canonical);
       if (!bank.order.length) throw new Error("No tables of sentences were found under headings such as Opening, Participation, Progress and Reflection.");
       const same = BANKS.findIndex(b=>b.name.toLowerCase()===bank.name.toLowerCase());
+      setupColours(bank, same>-1 ? BANKS[same] : null);
+      if (bank.colors && bank.colors.some(c=>!bank.colorMap[c.hex] && c.hex!=="000000")) msgs.push(`“${bank.name}” is colour-coded: choose a grade for each colour below.`);
       if (same>-1){ bank.id = BANKS[same].id; BANKS[same] = bank; msgs.push(`Updated “${bank.name}”.`); }
       else { BANKS.push(bank); msgs.push(`Added “${bank.name}”.`); }
       added++;
@@ -1237,7 +1310,8 @@ function renderBanks(){
     const seq = [...b.order]; if (b.parts.addons) seq.splice(seq.indexOf("progress")+1, 0, "addons");
     const parts = seq.map(k=>`${esc(k==="addons"?"Add-ons":((b.titles||{})[k]||PART_NAMES[k]||k))} ${b.parts[k].length}`).join(" · ");
     const warn = bankWarnings(b).map(w=>`<span class="chip warn">${esc(w)}</span>`).join(" ");
-    return `<tr><td><b id="bn-${i}">${esc(b.name)}</b>${state.bank && state.bank.id===b.id ? ' <span class="chip ok">In use</span>' : ""}</td><td>${parts}${warn?"<br>"+warn:""}</td>
+    const cols = b.colors ? `<div class="colmap">${b.colors.map(c=>`<div class="colrow"><span class="sw" style="background:#${c.hex}" title="#${c.hex}"></span><select data-cm="${i}" data-hex="${c.hex}" aria-label="Grade for this colour"><option value="">Not a grade</option>${"ABCDE".split("").map(g=>`<option value="${g}" ${b.colorMap[c.hex]===g?"selected":""}>${g} · ${GRADE_NAMES[g]}</option>`).join("")}</select><span style="color:var(--muted)">${c.count} sentence${c.count>1?"s":""}, e.g. “${esc(c.sample.length>60 ? c.sample.slice(0,60)+"…" : c.sample)}”</span></div>`).join("")}</div>` : "";
+    return `<tr><td><b id="bn-${i}">${esc(b.name)}</b>${state.bank && state.bank.id===b.id ? ' <span class="chip ok">In use</span>' : ""}</td><td>${parts}${warn?"<br>"+warn:""}${cols}</td>
       <td><div class="row" style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn" type="button" data-use="${i}">Use</button>
         <button class="btn" type="button" data-ren="${i}">Rename</button>
@@ -1245,6 +1319,11 @@ function renderBanks(){
         <button class="btn" type="button" data-del="${i}">Delete</button></div></td></tr>`;
   }).join("");
   const body = $("bankBody");
+  body.querySelectorAll("[data-cm]").forEach(s=>s.addEventListener("change",()=>{
+    const bank = BANKS[+s.dataset.cm]; bank.colorMap[s.dataset.hex] = s.value; applyColours(bank); saveBanks();
+    if (state.bank && state.bank.id===bank.id){ pickDefaults(false); render(); }
+    renderBanks();
+  }));
   body.querySelectorAll("[data-use]").forEach(b=>b.addEventListener("click",()=>{ $("course").value = BANKS[+b.dataset.use].id; loadBank(); renderBanks(); render(); showTab("one"); }));
   body.querySelectorAll("[data-exp]").forEach(b=>b.addEventListener("click",()=>{ const bank = BANKS[+b.dataset.exp]; saveFile(`${bank.name}.xlsx`, xlsxBlob(bankToAoa(bank), "Comment bank"), bankToast); }));
   body.querySelectorAll("[data-ren]").forEach(b=>b.addEventListener("click",()=>{
